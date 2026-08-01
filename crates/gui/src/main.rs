@@ -581,7 +581,7 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
             // a halved frame rate is visible rather than a surprise in the output.
             let shape = match &job.status {
                 Status::Running { out, .. } | Status::Done { out, .. } => match job.source {
-                    Some(src) if src != *out => format!("{src} → {out}"),
+                    Some(src) if src != *out => format!("{src}   →   {out}"),
                     _ => out.to_string(),
                 },
                 _ => job.source.map(|s| s.to_string()).unwrap_or_default(),
@@ -602,20 +602,28 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                 }
                 _ => String::new(),
             };
-            let detail = [shape, note]
-                .iter()
-                .filter(|s| !s.is_empty())
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("  ·  ");
-            if !detail.is_empty() {
+            // The encoder is right-aligned, under the size result it belongs
+            // with. Trailing it after the shape gave it wider separation than
+            // the before/after arrow, which inverted the hierarchy: the arrow
+            // marks the larger break.
+            if !shape.is_empty() || !note.is_empty() {
                 ui.add_space(2.0);
-                ui.label(
-                    egui::RichText::new(detail)
+                let small = |t: String| {
+                    egui::RichText::new(t)
                         .monospace()
                         .size(11.5)
-                        .color(theme::TEXT_DIM),
-                );
+                        .color(theme::TEXT_DIM)
+                };
+                ui.horizontal(|ui| {
+                    if !shape.is_empty() {
+                        ui.label(small(shape));
+                    }
+                    if !note.is_empty() {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(small(note));
+                        });
+                    }
+                });
             }
 
             match &job.status {
