@@ -13,10 +13,24 @@ rationale and roadmap.
 
 ---
 
-## Status: Phase 0 — encode spike (the go/no-go gate)
+## Status: Phase 0 complete — encode engine validated ✅
 
-A headless CLI that proves the load-bearing assumption: *can we reliably produce
-a `< N` MB H.264 MP4 via NVENC, from real ShadowPlay input?* No GUI yet.
+The headless CLI works and the load-bearing assumption is **proven on real
+hardware**: a single self-contained `squeeze.exe` (no DLLs, no user-installed
+FFmpeg) reliably produces a `< N` MB H.264 MP4 via NVENC. No GUI yet — that's
+Phase 1.
+
+| validated | result |
+|---|---|
+| Windows static `.exe` + NVENC (Tesla T4, driver 596.36) | 42.8 MB → 9.32 MB, **one pass**, 9.6 s, zero DLLs |
+| Linux + NVENC (Tesla T4) | 166 MB → 9.33 MB, one pass, 22.7 s (~⅓ the CPU of x264) |
+| macOS + x264 | 166 MB → 9.25 MB, one pass |
+| Output correctness | H.264 High, CFR, AAC stream-copied, **faststart** confirmed |
+
+Software fallback: builds include **openh264** (BSD), and `--encoder auto` probes
+each candidate by *actually opening* it — so a machine with no NVIDIA GPU, or a
+driver older than FFmpeg 8's NVENC floor (**≈570**), degrades to software instead
+of failing.
 
 What it does per input file:
 
