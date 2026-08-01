@@ -53,14 +53,14 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: C:/vcpkg/installed
-          key: vcpkg-installed-${{ env.VCPKG_TRIPLET }}-ffmpeg8-v3
+          key: vcpkg-installed-${{ env.VCPKG_TRIPLET }}-ffmpeg8-v4
 
-      - name: Install FFmpeg (static, LGPL-only, NVENC) via vcpkg
+      - name: Install FFmpeg (static, LGPL-only, NVENC + openh264 fallback) via vcpkg
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           & "C:\vcpkg\vcpkg.exe" install `
-            "ffmpeg[avcodec,avformat,avfilter,swresample,swscale,nvcodec,zlib,dav1d]:$env:VCPKG_TRIPLET"
+            "ffmpeg[avcodec,avformat,avfilter,swresample,swscale,nvcodec,openh264,zlib,dav1d]:$env:VCPKG_TRIPLET"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Save vcpkg installed tree
@@ -68,7 +68,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: C:/vcpkg/installed
-          key: vcpkg-installed-${{ env.VCPKG_TRIPLET }}-ffmpeg8-v3
+          key: vcpkg-installed-${{ env.VCPKG_TRIPLET }}-ffmpeg8-v4
 
       - name: Build squeeze.exe (release, static FFmpeg)
         shell: pwsh
