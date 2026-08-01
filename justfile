@@ -165,20 +165,20 @@ ci:
 ci-watch:
     gh run watch "$(gh run list --workflow build.yml --limit 1 --json databaseId -q '.[0].databaseId')"
 
-# Download the latest built squeeze.exe into ./dist
+# Download the latest built binaries into ./dist
 ci-fetch:
     rm -rf dist && gh run download --name "{{artifact}}" -D dist
     @ls -la dist
 
 # --- Deploy to a real RTX box over Tailscale/SSH (see docs/deploy-and-test.md) ---
 
-# Copy squeeze.exe + a clip to the test box. e.g.: just push-test me@100.x.y.z ~/clip.mp4
+# Copy squeeze-cli.exe + a clip to the test box. e.g.: just push-test me@100.x.y.z ~/clip.mp4
 push-test HOST CLIP REMOTE="C:/Users/Public/squeeze":
     ssh {{HOST}} powershell -NoProfile -Command "New-Item -ItemType Directory -Force '{{REMOTE}}' | Out-Null"
-    scp dist/squeeze.exe "{{CLIP}}" "{{HOST}}:{{REMOTE}}/"
+    scp dist/squeeze-cli.exe "{{CLIP}}" "{{HOST}}:{{REMOTE}}/"
 
 # Run the NVENC encode on the test box and pull the result back into ./dist
 test-remote HOST CLIP REMOTE="C:/Users/Public/squeeze":
-    ssh {{HOST}} powershell -NoProfile -Command "& '{{REMOTE}}/squeeze.exe' --encoder nvenc '{{REMOTE}}/{{ file_name(CLIP) }}'"
+    ssh {{HOST}} powershell -NoProfile -Command "& '{{REMOTE}}/squeeze-cli.exe' --encoder nvenc '{{REMOTE}}/{{ file_name(CLIP) }}'"
     scp "{{HOST}}:{{REMOTE}}/*_discord.mp4" ./dist/
     @echo "pulled output into ./dist"

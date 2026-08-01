@@ -36,11 +36,11 @@ jobs:
           cp packaging/README.txt dist/README.txt
           mkdir -p out
           (cd dist && zip -q -r "../out/${zip_name}" .)
-          cp dist/squeeze.exe dist/squeeze-gui.exe out/
+          cp dist/squeeze-cli.exe dist/squeeze.exe out/
 
           # Note the explicit file list: `sha256sum *` would race with its own
           # redirect target and hash an empty SHA256SUMS.txt.
-          (cd out && sha256sum "$zip_name" squeeze.exe squeeze-gui.exe > SHA256SUMS.txt)
+          (cd out && sha256sum "$zip_name" squeeze-cli.exe squeeze.exe > SHA256SUMS.txt)
           cat out/SHA256SUMS.txt
 
       # Ties these exact binaries to this public workflow run, so anyone can
@@ -49,8 +49,8 @@ jobs:
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
+            out/squeeze-cli.exe
             out/squeeze.exe
-            out/squeeze-gui.exe
             out/${{ steps.pkg.outputs.zip }}
 
       - name: Compose release notes
@@ -59,7 +59,7 @@ jobs:
           {
             echo "### Download"
             echo
-            echo "**Just want the app?** Grab \`squeeze-gui.exe\` — it is self-contained, nothing to install."
+            echo "**Just want the app?** Grab \`squeeze.exe\` — it is self-contained, nothing to install."
             echo "The \`.zip\` additionally contains the CLI, the licence and a README."
             echo
             echo "Needs Windows 10/11 (x64). Uses your NVIDIA GPU (NVENC) when available —"
@@ -73,10 +73,10 @@ jobs:
             echo
             echo '```'
             echo "# checksum"
-            echo "certutil -hashfile squeeze-gui.exe SHA256"
+            echo "certutil -hashfile squeeze.exe SHA256"
             echo
             echo "# provenance — proves it was built by this repo's public workflow"
-            echo "gh attestation verify squeeze-gui.exe -R ${GITHUB_REPOSITORY}"
+            echo "gh attestation verify squeeze.exe -R ${GITHUB_REPOSITORY}"
             echo '```'
             echo
             echo "### SHA-256"
@@ -97,6 +97,6 @@ jobs:
           draft: true
           files: |
             out/${{ steps.pkg.outputs.zip }}
-            out/squeeze-gui.exe
             out/squeeze.exe
+            out/squeeze-cli.exe
             out/SHA256SUMS.txt

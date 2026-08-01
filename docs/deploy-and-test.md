@@ -3,14 +3,14 @@
 The whole pipeline runs without booting Windows locally:
 
 ```
-push to GitHub  ──►  GitHub Actions builds squeeze.exe  ──►  download artifact
+push to GitHub  ──►  GitHub Actions builds the binaries  ──►  download artifact
                                                                     │
                                           scp one file to a real RTX box  ◄─┘
                                                      │
                                             run it over SSH (NVENC)
 ```
 
-Because `squeeze.exe` is a **single static binary** (FFmpeg linked in; NVENC
+Because each binary is a **single static binary** (FFmpeg linked in; NVENC
 `dlopen`'d from the NVIDIA driver at runtime), deploying to a test machine is
 "copy one file" — the test box needs **nothing** installed but its GeForce driver.
 
@@ -26,7 +26,7 @@ From the Mac:
 ```bash
 just ci         # trigger the workflow (or just `git push`)
 just ci-watch   # follow the run to completion
-just ci-fetch   # download the built squeeze.exe into ./dist
+just ci-fetch   # download the built binaries into ./dist
 ```
 
 ## Test — friend's Windows 11 + RTX PC (primary, free)
@@ -62,7 +62,7 @@ don't need his password. Note his Tailscale IP (`100.x.y.z`).
 ### Per-test (from the Mac, repeatable)
 
 ```bash
-just ci-fetch                                   # get the latest squeeze.exe
+just ci-fetch                                   # get the latest binaries
 just push-test  friend@100.x.y.z  ~/clip.mp4    # scp exe + clip to the box
 just test-remote friend@100.x.y.z ~/clip.mp4    # run NVENC encode, pull result back
 ```

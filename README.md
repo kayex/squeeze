@@ -17,11 +17,11 @@ rationale and roadmap.
 
 Two binaries ship side by side:
 
-- **`squeeze-gui.exe`** — the app: drop clips on the window, pick a size budget
+- **`squeeze.exe`** — the app: drop clips on the window, pick a size budget
   (10 / 50 / 500 MB), watch per-file progress. Encoding runs on a background
   worker. Files dropped onto the `.exe` icon are queued too. Native egui — no
   Electron, no webview.
-- **`squeeze.exe`** — the headless CLI, for scripting and debugging.
+- **`squeeze-cli.exe`** — the headless CLI, for scripting and debugging.
 
 Phase 0's engine is **proven on real hardware**: a single self-contained
 executable (no DLLs, no user-installed FFmpeg) reliably produces a `< N` MB

@@ -1,7 +1,7 @@
-//! squeeze — headless Phase-0 spike CLI.
+//! squeeze-cli — the headless companion to the squeeze GUI.
 //!
 //! Usage:
-//!   squeeze [OPTIONS] <INPUT>...
+//!   squeeze-cli [OPTIONS] <INPUT>...
 //!
 //! Compresses each input to an MP4 (H.264 + faststart) that fits under a size
 //! ceiling, written next to the input with a suffix. The encode runs in-process
@@ -181,10 +181,10 @@ fn next_val(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String>
 
 fn print_help() {
     eprintln!(
-        "squeeze — compress gameplay clips to fit under a size limit (for Discord)\n\
+        "squeeze-cli — compress gameplay clips to fit under a size limit (for Discord)\n\
 \n\
 USAGE:\n\
-    squeeze [OPTIONS] <INPUT>...\n\
+    squeeze-cli [OPTIONS] <INPUT>...\n\
 \n\
 OPTIONS:\n\
     --max-mb <MB>        Size ceiling in MB (default: 10.0 = Discord free tier)\n\

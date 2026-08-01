@@ -17,14 +17,14 @@ winresource = "0.1"
 [package.metadata.winresource]
 ProductName = "squeeze"
 FileDescription = "squeeze — shrink ShadowPlay clips for Discord"
-OriginalFilename = "squeeze-gui.exe"
-InternalName = "squeeze-gui"
+OriginalFilename = "squeeze.exe"
+InternalName = "squeeze"
 CompanyName = "Johan Vester"
 LegalCopyright = "Copyright © 2026 Johan Vester. MIT licensed."
 Comments = "https://github.com/kayex/squeeze2"
 
 [[bin]]
-name = "squeeze-gui"
+name = "squeeze"
 path = "src/main.rs"
 
 [dependencies]

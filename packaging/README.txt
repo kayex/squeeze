@@ -7,11 +7,11 @@ squeeze — shrink NVIDIA ShadowPlay clips to share on Discord
 WHAT'S IN HERE
 --------------
 
-  squeeze-gui.exe   The app. Double-click it, then drag video files onto the
+  squeeze.exe       The app. Double-click it, then drag video files onto the
                     window. Start here.
 
-  squeeze.exe       Command-line version, for scripting:
-                        squeeze.exe --max-mb 10 "C:\path\to\clip.mp4"
+  squeeze-cli.exe   Command-line version, for scripting:
+                        squeeze-cli.exe --max-mb 10 "C:\path\to\clip.mp4"
 
 Both are self-contained — nothing to install, no FFmpeg, no DLLs.
 
