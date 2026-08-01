@@ -803,21 +803,50 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                     ..
                 } => {
                     ui.add_space(3.0);
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Held at {}×{} with only {} to cover it. Without \
-                             Keep resolution the same {} would give a sharper \
-                             {}×{}.",
+                    // One paragraph, so it wraps as prose, but the switch is
+                    // set in mono like every other literal in the window.
+                    // Naming it in the body font reads as a stray capital.
+                    let size = egui::TextStyle::Small.resolve(ui.style()).size;
+                    let prose = egui::TextFormat {
+                        font_id: egui::FontId::proportional(size),
+                        color: theme::WARN,
+                        ..Default::default()
+                    };
+                    // A tinted chip, the way a doc would set `code`. Mono alone
+                    // is too quiet here: it reads as a font glitch rather than
+                    // as the name of something on screen.
+                    let chip = egui::TextFormat {
+                        font_id: egui::FontId::monospace(size * 0.94),
+                        color: theme::WARN,
+                        background: theme::mix(theme::WARN, theme::SURFACE, 0.82),
+                        ..Default::default()
+                    };
+                    let mut job = egui::text::LayoutJob {
+                        wrap: egui::text::TextWrapping {
+                            max_width: ui.available_width(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    };
+                    job.append(
+                        &format!(
+                            "Held at {}×{} with only {} to cover it. Without ",
                             out.width,
                             out.height,
-                            bitrate(*bitrate_bps),
-                            mb(*bytes),
-                            w,
-                            h
-                        ))
-                        .small()
-                        .color(theme::WARN),
+                            bitrate(*bitrate_bps)
+                        ),
+                        0.0,
+                        prose.clone(),
                     );
+                    // Hair spaces inside the run: egui paints the background
+                    // tight to the glyphs, so the chip needs its own padding.
+                    job.append("\u{2009}Keep resolution\u{2009}", 0.0, chip);
+                    job.append(
+                        &format!(" the same {} would give a sharper {}×{}.", mb(*bytes), w, h),
+                        0.0,
+                        prose,
+                    );
+                    ui.label(job);
                 }
                 Status::Done { .. } => {}
                 Status::Failed(err) => {
