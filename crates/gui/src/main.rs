@@ -351,7 +351,7 @@ impl eframe::App for App {
             // Switches, styled like the plans and lit when on. A row rather than
             // a stack of checkboxes, so more can be added without it becoming a
             // list: one line each, and the row re-centres itself.
-            ui.add_space(10.0);
+            ui.add_space(18.0);
             toggle_row(
                 ui,
                 &mut [
