@@ -301,11 +301,28 @@ impl eframe::App for App {
                     // top of each other rather than reading as a 2px divider.
                     ui.spacing_mut().item_spacing.x = -1.0;
                     // Right-to-left, so the rightmost cell is added first.
-                    if toggle(ui, "No audio", self.no_audio, Seg::Right, self.keep_fps).clicked() {
+                    // The right cell first, so the left one can be told whether
+                    // its neighbour is hovered before it paints the shared seam.
+                    let right = toggle(
+                        ui,
+                        "No audio",
+                        self.no_audio,
+                        Seg::Right,
+                        self.keep_fps,
+                        false,
+                    );
+                    let left = toggle(
+                        ui,
+                        "Keep 60 fps",
+                        self.keep_fps,
+                        Seg::Left,
+                        self.no_audio,
+                        right.hovered(),
+                    );
+                    if right.clicked() {
                         self.no_audio = !self.no_audio;
                     }
-                    if toggle(ui, "Keep 60 fps", self.keep_fps, Seg::Left, self.no_audio).clicked()
-                    {
+                    if left.clicked() {
                         self.keep_fps = !self.keep_fps;
                     }
                 });
@@ -374,13 +391,15 @@ enum Seg {
 /// of the hover state at paint time, since `allocate_exact_size` hands back the
 /// response before anything is drawn.
 ///
-/// `neighbour_on` is only consulted by the left cell, to colour that seam.
+/// `neighbour_on` and `neighbour_hovered` are only consulted by the left cell,
+/// which owns the seam and so has to colour it on behalf of both.
 fn toggle(
     ui: &mut egui::Ui,
     label: &str,
     on: bool,
     seg: Seg,
     neighbour_on: bool,
+    neighbour_hovered: bool,
 ) -> egui::Response {
     let r = 8;
     let corners = match seg {
@@ -424,10 +443,7 @@ fn toggle(
             egui::Stroke::NONE,
         ),
         (true, false) => (theme::CYAN, egui::Stroke::NONE),
-        (false, true) => (
-            theme::SURFACE_HI,
-            egui::Stroke::new(1.0, theme::CYAN.gamma_multiply(0.6)),
-        ),
+        (false, true) => (theme::SURFACE_HI, egui::Stroke::new(1.0, theme::CYAN)),
         (false, false) => (theme::SURFACE, egui::Stroke::new(1.0, theme::BORDER)),
     };
 
@@ -439,7 +455,13 @@ fn toggle(
         // The seam. Drawn by the left cell so it lands once, and tinted to stay
         // legible whether it divides two lit cells or a lit from an unlit one.
         if seg == Seg::Left {
-            let colour = if on && neighbour_on {
+            // An unlit cell being hovered draws a cyan border, and this seam is
+            // part of that border. Painted after both cells, it would otherwise
+            // overwrite the right cell's edge and leave its outline broken.
+            let outlined = (hovered && !on) || (neighbour_hovered && !neighbour_on);
+            let colour = if outlined {
+                theme::CYAN
+            } else if on && neighbour_on {
                 // Blended, not faded: a translucent line over a cyan cell
                 // composites straight back to cyan and vanishes.
                 theme::mix(theme::CYAN, theme::BG, 0.45)
