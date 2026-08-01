@@ -67,6 +67,10 @@ struct Job {
     budget: u64,
     /// From probing the file when it was dropped; None if that failed.
     source: Option<Shape>,
+    /// When encoding began, so the header can count up while it runs.
+    started: Option<std::time::Instant>,
+    /// How long encoding took, frozen once it finishes.
+    took: Option<std::time::Duration>,
     status: Status,
 }
 
@@ -236,6 +240,8 @@ impl App {
             source_bytes,
             budget: self.budget,
             source,
+            started: None,
+            took: None,
             status,
         });
         if queued {
@@ -258,10 +264,29 @@ impl eframe::App for App {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let mut running = false;
         while let Ok(msg) = self.updates.try_recv() {
             if let Some(job) = self.jobs.get_mut(msg.id) {
+                match &msg.status {
+                    Status::Running { .. } => {
+                        job.started.get_or_insert_with(std::time::Instant::now);
+                    }
+                    Status::Done { .. } | Status::Failed(_) => {
+                        job.took = Some(job.started.map(|s| s.elapsed()).unwrap_or_default());
+                    }
+                    Status::Queued => {}
+                }
                 job.status = msg.status;
             }
+        }
+        for job in &self.jobs {
+            running |= matches!(job.status, Status::Running { .. });
+        }
+        // Progress messages alone would leave the counter stalling between
+        // updates, so tick regardless while anything is encoding.
+        if running {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(250));
         }
 
         let (dropped, hovering) = ui.ctx().input(|i| {
@@ -552,96 +577,82 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
 
+            // Header: the file, how long it runs, and how it ended up.
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(name).strong());
-                ui.with_layout(
-                    egui::Layout::right_to_left(egui::Align::Center),
-                    |ui| match &job.status {
-                        Status::Done { bytes, fits, .. } => {
-                            let sizes = format!("{} → {}", mb(job.source_bytes), mb(*bytes));
-                            if *fits {
-                                ui.label(
-                                    egui::RichText::new(format!("{sizes}  ✔"))
-                                        .monospace()
-                                        .color(theme::OK),
-                                );
-                            } else {
-                                ui.label(
-                                    egui::RichText::new(format!("{sizes}  too big"))
-                                        .monospace()
-                                        .color(theme::WARN),
-                                );
-                            }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    match &job.status {
+                        Status::Done { fits: true, .. } => {
+                            ui.label(egui::RichText::new("✔").color(theme::OK));
+                        }
+                        Status::Done { fits: false, .. } => {
+                            ui.label(egui::RichText::new("too big").color(theme::WARN));
                         }
                         Status::Failed(_) => {
                             ui.label(egui::RichText::new("failed").color(theme::ERR));
                         }
-                        _ => {
-                            ui.label(
-                                egui::RichText::new(mb(job.source_bytes))
-                                    .monospace()
-                                    .color(theme::TEXT_DIM),
-                            );
-                        }
-                    },
-                );
-            });
-
-            // What the clip is and what it's becoming, so a dropped resolution or
-            // a halved frame rate is visible rather than a surprise in the output.
-            let shape = match &job.status {
-                Status::Running { out, .. } | Status::Done { out, .. } => match job.source {
-                    Some(src) if src != *out => format!("{src}   →   {out}"),
-                    _ => out.to_string(),
-                },
-                _ => job.source.map(|s| s.to_string()).unwrap_or_default(),
-            };
-            let note = match &job.status {
-                Status::Queued => "waiting".to_string(),
-                Status::Running {
-                    pass,
-                    max_passes,
-                    encoder,
-                    bitrate_bps,
-                    ..
-                } => {
-                    let rate = bitrate(*bitrate_bps);
-                    if *pass > 1 {
-                        format!("{encoder} · {rate} · pass {pass}/{max_passes}")
-                    } else {
-                        format!("{encoder} · {rate}")
+                        _ => {}
                     }
-                }
-                Status::Done {
-                    encoder,
-                    bitrate_bps,
-                    ..
-                } => format!("{encoder} · {}", bitrate(*bitrate_bps)),
-                Status::Failed(_) => String::new(),
-            };
-            // The encoder is right-aligned, under the size result it belongs
-            // with. Trailing it after the shape gave it wider separation than
-            // the before/after arrow, which inverted the hierarchy: the arrow
-            // marks the larger break.
-            if !shape.is_empty() || !note.is_empty() {
-                ui.add_space(2.0);
-                let small = |t: String| {
-                    egui::RichText::new(t)
-                        .monospace()
-                        .size(11.5)
-                        .color(theme::TEXT_DIM)
-                };
-                ui.horizontal(|ui| {
-                    if !shape.is_empty() {
-                        ui.label(small(shape));
-                    }
-                    if !note.is_empty() {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(small(note));
-                        });
+                    let elapsed = job
+                        .took
+                        .or_else(|| job.started.map(|s| s.elapsed()))
+                        .map(|d| d.as_secs_f64());
+                    if let Some(secs) = elapsed {
+                        ui.label(
+                            egui::RichText::new(duration(secs))
+                                .monospace()
+                                .size(11.5)
+                                .color(theme::TEXT_DIM),
+                        );
                     }
                 });
-            }
+            });
+
+            // Before over after, so the columns stack into a table and a field
+            // that changed stands out when scanning a long queue.
+            ui.add_space(4.0);
+            ui.scope(|ui| {
+                ui.spacing_mut().item_spacing.y = 1.0;
+                if let Some(src) = job.source {
+                    stat_line(ui, Some(src), Some(mb(job.source_bytes)), None, "");
+                }
+                match &job.status {
+                    Status::Queued => stat_line(ui, None, Some(mb(job.budget)), None, "waiting"),
+                    Status::Running {
+                        out,
+                        encoder,
+                        bitrate_bps,
+                        pass,
+                        max_passes,
+                        ..
+                    } => {
+                        let rate = bitrate(*bitrate_bps);
+                        let note = if *pass > 1 {
+                            format!("{encoder} · {rate} · pass {pass}/{max_passes}")
+                        } else {
+                            format!("{encoder} · {rate}")
+                        };
+                        // The chosen limit stands in until the real size is
+                        // known, so it is obvious which setting the job started
+                        // with rather than being taken on trust.
+                        stat_line(ui, Some(*out), Some(mb(job.budget)), job.source, &note);
+                    }
+                    Status::Done {
+                        bytes,
+                        out,
+                        encoder,
+                        bitrate_bps,
+                        ..
+                    } => stat_line(
+                        ui,
+                        Some(*out),
+                        Some(mb(*bytes)),
+                        job.source,
+                        &format!("{encoder} · {}", bitrate(*bitrate_bps)),
+                    ),
+                    Status::Failed(_) => {}
+                }
+            });
 
             match &job.status {
                 Status::Queued => {
@@ -652,8 +663,6 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                     ui.add_space(6.0);
                     theme::gradient_bar(ui, *fraction);
                 }
-                // Landing over the limit is not an error, so say what happened
-                // and what would help rather than leaving a bare warning colour.
                 Status::Done { fits: false, .. } => {
                     ui.add_space(3.0);
                     ui.label(
@@ -676,7 +685,60 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
         });
 }
 
-/// `clip.mp4` -> `clip_discord.mp4`, alongside the source.
+/// One "before" or "after" line. Fields sit in fixed monospace columns so the
+/// two lines stack into a table, and anything `compared_to` shows has changed is
+/// picked out in the accent colour.
+fn stat_line(
+    ui: &mut egui::Ui,
+    shape: Option<Shape>,
+    size: Option<String>,
+    compared_to: Option<Shape>,
+    note: &str,
+) {
+    let changed = |f: fn(&Shape) -> String| match (shape, compared_to) {
+        (Some(a), Some(b)) => f(&a) != f(&b),
+        _ => false,
+    };
+    let res_changed = changed(|s| format!("{}x{}", s.width, s.height));
+    let fps_changed = changed(|s| format!("{:.0}", s.fps));
+
+    let cell = |t: String, accent: bool| {
+        egui::RichText::new(t)
+            .monospace()
+            .size(11.5)
+            .color(if accent { theme::CYAN } else { theme::TEXT_DIM })
+    };
+
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+        let (res, fps) = match shape {
+            Some(s) => (
+                format!("{}×{}", s.width, s.height),
+                format!("{:.0} fps", s.fps),
+            ),
+            None => (String::new(), String::new()),
+        };
+        ui.label(cell(format!("{res:<9}"), res_changed));
+        ui.label(cell(format!("{fps:>7}"), fps_changed));
+        ui.label(cell(format!("{:>9}", size.unwrap_or_default()), false));
+        if !note.is_empty() {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(cell(note.to_string(), false));
+            });
+        }
+    });
+}
+
+/// `1m 22s`, or `47s` for anything under a minute.
+fn duration(secs: f64) -> String {
+    let s = secs.round() as i64;
+    if s >= 60 {
+        format!("{}m {:02}s", s / 60, s % 60)
+    } else {
+        format!("{s}s")
+    }
+}
+
 fn output_path(input: &Path) -> PathBuf {
     let stem = input
         .file_stem()
