@@ -85,6 +85,15 @@ struct App {
 
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        // egui's proportional stack is Ubuntu-Light + the two emoji fonts, none
+        // of which have arrows (U+2192) — they render as tofu. Hack does, so add
+        // it as a last-resort fallback.
+        let mut fonts = egui::FontDefinitions::default();
+        if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+            family.push("Hack".to_owned());
+        }
+        cc.egui_ctx.set_fonts(fonts);
+
         let (work_tx, work_rx) = channel::<WorkItem>();
         let (msg_tx, msg_rx) = channel::<Msg>();
         let ctx = cc.egui_ctx.clone();
@@ -203,6 +212,12 @@ impl App {
 }
 
 impl eframe::App for App {
+    /// eframe's default is a near-black (12,12,12); anything the UI leaves
+    /// unpainted would show as a dark band. Match the window background instead.
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        visuals.window_fill().to_normalized_gamma_f32()
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         while let Ok(msg) = self.updates.try_recv() {
             if let Some(job) = self.jobs.get_mut(msg.id) {
@@ -224,8 +239,11 @@ impl eframe::App for App {
             self.enqueue(path);
         }
 
-        // The Ui handed to us has no margin/background of its own.
+        // The Ui handed to us has no margin/background of its own, and anything
+        // it doesn't paint falls through to the clear colour. Expand the frame
+        // to the full viewport so the background covers the window.
         egui::Frame::central_panel(ui.style()).show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
             ui.horizontal(|ui| {
                 ui.heading("squeeze");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
