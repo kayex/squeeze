@@ -150,11 +150,21 @@ pub fn transcode(
 
     // Rate-control ceiling + carry source color metadata. These fields have no
     // typed setter in rsmpeg, so write them through the raw pointer.
+    //
+    // The ceiling is deliberately loose. A tight one (1.15x average over a 2s
+    // buffer) made x264 log a stream of "VBV underflow" warnings at the low
+    // bitrates targeted here, where a single keyframe can outweigh the whole
+    // buffer. Nothing downstream cares: x264 only writes HRD parameters into
+    // the SPS when nal-hrd is asked for, which it is not, so the buffer is
+    // never signalled to a decoder. It exists only to stop one pass
+    // overshooting the size target badly enough to cost an extra pass, and a
+    // loose bound does that just as well while leaving room to spend bits on
+    // a hard scene.
     unsafe {
         let e = enc_ctx.as_mut_ptr();
         let d = dec_ctx.as_ptr();
-        (*e).rc_max_rate = (plan.video_bitrate_bps as f64 * 1.15) as i64;
-        (*e).rc_buffer_size = (plan.video_bitrate_bps as f64 * 2.0) as i32;
+        (*e).rc_max_rate = (plan.video_bitrate_bps as f64 * 2.0) as i64;
+        (*e).rc_buffer_size = (plan.video_bitrate_bps as f64 * 4.0) as i32;
         (*e).color_range = (*d).color_range;
         (*e).colorspace = (*d).colorspace;
         (*e).color_primaries = (*d).color_primaries;
