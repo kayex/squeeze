@@ -345,38 +345,41 @@ impl eframe::App for App {
             // Switches, styled like the plans and lit when on. A row rather than
             // a stack of checkboxes, so more can be added without it becoming a
             // list. Rightmost is added first in a right-to-left layout.
-            ui.add_space(2.0);
+            ui.add_space(10.0);
             ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // Cells butt together: -1 so the neighbours' strokes land on
-                    // top of each other rather than reading as a 2px divider.
-                    ui.spacing_mut().item_spacing.x = -1.0;
-                    // Right-to-left, so the rightmost cell is added first.
-                    // The right cell first, so the left one can be told whether
-                    // its neighbour is hovered before it paints the shared seam.
-                    let right = toggle(
-                        ui,
-                        "No audio",
-                        self.no_audio,
-                        Seg::Right,
-                        self.keep_fps,
-                        false,
-                    );
-                    let left = toggle(
-                        ui,
-                        "Keep 60 fps",
-                        self.keep_fps,
-                        Seg::Left,
-                        self.no_audio,
-                        right.hovered(),
-                    );
-                    if right.clicked() {
-                        self.no_audio = !self.no_audio;
-                    }
-                    if left.clicked() {
-                        self.keep_fps = !self.keep_fps;
-                    }
-                });
+                // Centred by hand. Wrapping the row in vertical_centered does
+                // nothing, because a horizontal layout claims the full width
+                // and so is already "centred"; the group's own width has to
+                // be measured and the slack split.
+                let group = toggle_width(ui, "Keep 60 fps") + toggle_width(ui, "No audio") - 1.0;
+                ui.add_space(((ui.available_width() - group) / 2.0).max(0.0));
+                // Cells butt together: -1 so the neighbours' strokes land on
+                // top of each other rather than reading as a 2px divider.
+                ui.spacing_mut().item_spacing.x = -1.0;
+                // Left cell first, so the right one can be told whether its
+                // neighbour is hovered before it paints the shared seam.
+                let left = toggle(
+                    ui,
+                    "Keep 60 fps",
+                    self.keep_fps,
+                    Seg::Left,
+                    self.no_audio,
+                    false,
+                );
+                let right = toggle(
+                    ui,
+                    "No audio",
+                    self.no_audio,
+                    Seg::Right,
+                    self.keep_fps,
+                    left.hovered(),
+                );
+                if left.clicked() {
+                    self.keep_fps = !self.keep_fps;
+                }
+                if right.clicked() {
+                    self.no_audio = !self.no_audio;
+                }
             });
             ui.add_space(12.0);
 
@@ -458,6 +461,21 @@ enum Seg {
     Right,
 }
 
+/// How wide [`toggle`] will come out for a given label, so a row of them can be
+/// centred before any of them is laid out.
+fn toggle_width(ui: &egui::Ui, label: &str) -> f32 {
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        label,
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::proportional(13.0),
+            ..Default::default()
+        },
+    );
+    ui.painter().layout_job(job).size().x + ui.spacing().button_padding.x * 2.0
+}
+
 /// One cell of a joined on/off group, painted by hand.
 ///
 /// Hand-painting buys two things a plain `Button` cannot: a lit cell with no
@@ -526,9 +544,10 @@ fn toggle(
         painter.rect(rect, corners, fill, stroke, egui::StrokeKind::Inside);
         painter.galley(rect.center() - galley.size() / 2.0, galley, text_colour);
 
-        // The seam. Drawn by the left cell so it lands once, and tinted to stay
-        // legible whether it divides two lit cells or a lit from an unlit one.
-        if seg == Seg::Left {
+        // The seam, drawn by the cell added second so it lands on top of its
+        // neighbour's edge, and tinted to stay legible whether it divides two
+        // lit cells or a lit from an unlit one.
+        if seg == Seg::Right {
             // An unlit cell being hovered draws a cyan border, and this seam is
             // part of that border. Painted after both cells, it would otherwise
             // overwrite the right cell's edge and leave its outline broken.
@@ -544,7 +563,7 @@ fn toggle(
             } else {
                 theme::BORDER
             };
-            painter.vline(rect.right(), rect.y_range(), egui::Stroke::new(1.0, colour));
+            painter.vline(rect.left(), rect.y_range(), egui::Stroke::new(1.0, colour));
         }
     }
     response
