@@ -63,8 +63,9 @@ point fewer or smaller frames look better than blurry ones.
 3. **Resolution**: 1440p and 4K are kept when there is plenty of bitrate to go
    round (above ~10 Mbit/s) and come down to 1080p when there is not. Below
    ~1.6 Mbit/s they drop again to 720p, and below ~700 kbit/s to 480p.
-   The **Keep resolution** switch (or `--keep-resolution`) overrides this.
-   Clips are never enlarged.
+   The **Keep resolution** switch (or `--keep-resolution`) overrides this; when
+   holding the frame leaves too little bitrate to be worth it, the clip's card
+   says so. Clips are never enlarged.
 
 4. **Frame rate**: anything above 45 fps drops to 30 when the bitrate is
    under ~3 Mbit/s, which is the usual case for clips longer than about

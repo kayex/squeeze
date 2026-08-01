@@ -56,6 +56,9 @@ enum Status {
         encoder: String,
         bitrate_bps: i64,
         out: Shape,
+        /// Set when Keep resolution held a frame the ladder would have shrunk,
+        /// so the card can say what that cost.
+        held: Option<(i32, i32)>,
     },
     Failed(String),
 }
@@ -179,6 +182,7 @@ impl App {
                         fits: o.fits,
                         encoder: used_encoder,
                         bitrate_bps: o.last_plan.video_bitrate_bps,
+                        held: o.held_instead_of,
                         out: Shape {
                             width: o.last_plan.width,
                             height: o.last_plan.height,
@@ -753,6 +757,7 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                         out,
                         encoder,
                         bitrate_bps,
+                        ..
                     } => stat_line(
                         ui,
                         Some(*out),
@@ -783,6 +788,32 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                              The clip is too long for that limit; trim it to a \
                              shorter section and try again.",
                             budget_label(job.budget)
+                        ))
+                        .small()
+                        .color(theme::WARN),
+                    );
+                }
+                // Only when the hold actually bit: keeping a frame the ladder
+                // would have kept anyway says nothing worth reading.
+                Status::Done {
+                    held: Some((w, h)),
+                    out,
+                    bytes,
+                    bitrate_bps,
+                    ..
+                } => {
+                    ui.add_space(3.0);
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Held at {}×{} with only {} to cover it. Without \
+                             Keep resolution the same {} would give a sharper \
+                             {}×{}.",
+                            out.width,
+                            out.height,
+                            bitrate(*bitrate_bps),
+                            mb(*bytes),
+                            w,
+                            h
                         ))
                         .small()
                         .color(theme::WARN),

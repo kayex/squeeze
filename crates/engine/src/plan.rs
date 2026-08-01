@@ -133,8 +133,18 @@ fn target_video_bps(info: &MediaInfo, opts: &CompressOptions, audio: AudioAction
 /// correspondingly worse. Capping total pixels treats both alike; for 16:9 the
 /// result is identical to a height cap.
 fn choose_resolution(info: &MediaInfo, opts: &CompressOptions, video_bps: i64) -> (i32, i32) {
+    if opts.keep_resolution {
+        return (make_even(info.width.max(2)), make_even(info.height.max(2)));
+    }
+    ladder_resolution(info, video_bps)
+}
+
+/// The ladder on its own, with no hold applied. Kept callable so a finished
+/// encode can say what holding the frame cost: the caller compares this against
+/// the size actually used.
+pub(crate) fn ladder_resolution(info: &MediaInfo, video_bps: i64) -> (i32, i32) {
     // 16:9 reference frames: 1920x1080, 1280x720, 854x480.
-    let max_pixels: i64 = if opts.keep_resolution || video_bps >= 10_000_000 {
+    let max_pixels: i64 = if video_bps >= 10_000_000 {
         i64::MAX
     } else if video_bps >= 1_600_000 {
         1920 * 1080

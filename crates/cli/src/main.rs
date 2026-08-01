@@ -103,6 +103,13 @@ fn process_one(input: &Path, args: &Args, opts: &CompressOptions) -> Result<()> 
         human_mb(outcome.final_bytes),
         outcome.passes,
     );
+    if let Some((w, h)) = outcome.held_instead_of {
+        println!(
+            "    note: held at {}x{}; without --keep-resolution the same size \
+would give a sharper {w}x{h}",
+            outcome.last_plan.width, outcome.last_plan.height,
+        );
+    }
     Ok(())
 }
 

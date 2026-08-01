@@ -83,6 +83,12 @@ pub struct CompressOutcome {
     pub fits: bool,
     pub info: MediaInfo,
     pub last_plan: EncodePlan,
+    /// When the frame was held at the source size and the ladder would have
+    /// chosen something smaller, the size it would have chosen. `None` when no
+    /// hold was asked for, or when holding cost nothing. A UI can use this to
+    /// point out that the same bytes would have gone further at a lower
+    /// resolution.
+    pub held_instead_of: Option<(i32, i32)>,
 }
 
 /// Compress `input` to `output`, re-encoding at a lower bitrate until it fits
@@ -155,6 +161,13 @@ pub fn compress_to_target(
         plan = next;
     }
 
+    // Compared against the plan actually used: equal sizes mean the hold made
+    // no difference and there is nothing to report.
+    let held_instead_of = opts
+        .keep_resolution
+        .then(|| plan::ladder_resolution(&info, plan.video_bitrate_bps))
+        .filter(|&(w, h)| (w, h) != (plan.width, plan.height));
+
     Ok(CompressOutcome {
         output: output.to_path_buf(),
         final_bytes,
@@ -162,6 +175,7 @@ pub fn compress_to_target(
         fits,
         info,
         last_plan: plan,
+        held_instead_of,
     })
 }
 
