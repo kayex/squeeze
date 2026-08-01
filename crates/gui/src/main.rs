@@ -351,14 +351,38 @@ fn plan_option(ui: &mut egui::Ui, tier: &str, size: &str, selected: bool) -> egu
             ..Default::default()
         },
     );
-    ui.selectable_label(selected, job)
+    pinned_button(ui, job, selected)
 }
 
 /// An on/off switch wearing the same clothes as [`plan_option`]: lit cyan when
 /// on, dim when off.
 fn toggle(ui: &mut egui::Ui, label: &str, on: bool) -> egui::Response {
-    let text = egui::RichText::new(label).color(if on { theme::CYAN } else { theme::TEXT_DIM });
-    ui.selectable_label(on, text)
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        label,
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::proportional(13.5),
+            color: if on { theme::CYAN } else { theme::TEXT_DIM },
+            ..Default::default()
+        },
+    );
+    pinned_button(ui, job, on)
+}
+
+/// A selectable button whose width is pinned to its own text.
+///
+/// egui derives a button's inner margin from the visuals of its *current state*
+/// (`button_padding + expansion - bg_stroke.width`), so the same control can
+/// allocate a different width once selected or hovered, shunting its neighbours
+/// sideways. Measuring the text and demanding that width in every state stops
+/// the row from twitching, while still letting each option size to its own
+/// content.
+fn pinned_button(ui: &mut egui::Ui, job: egui::text::LayoutJob, selected: bool) -> egui::Response {
+    let galley = ui.painter().layout_job(job.clone());
+    let padding = ui.spacing().button_padding;
+    let min_size = galley.size() + padding * 2.0;
+    ui.add(egui::Button::selectable(selected, job).min_size(min_size))
 }
 
 fn drop_zone(ui: &mut egui::Ui, hovering: bool) {
