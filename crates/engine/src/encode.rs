@@ -25,8 +25,15 @@ pub enum EncoderKind {
 }
 
 /// Pick the first H.264 encoder available in this FFmpeg build for the requested
-/// preference. Availability is checked by name; whether it actually *opens*
-/// (e.g. NVENC needs a driver) is validated later in [`transcode`].
+/// preference.
+///
+/// For `Auto` each candidate is *opened*, not merely looked up by name: a
+/// hardware encoder like `h264_nvenc` is compiled into the build whether or not
+/// the machine has an NVIDIA GPU, and only fails when opened. Probing here is
+/// what makes the fallback to a software encoder actually work.
+///
+/// An explicitly requested encoder is only checked for presence, so the caller
+/// gets the encoder's real open error rather than a silent substitution.
 pub fn resolve_encoder(choice: crate::Encoder) -> Result<(&'static CStr, EncoderKind)> {
     use crate::Encoder::*;
     let candidates: &[(&'static CStr, EncoderKind)] = match choice {
@@ -39,15 +46,40 @@ pub fn resolve_encoder(choice: crate::Encoder) -> Result<(&'static CStr, Encoder
         X264 => &[(c"libx264", EncoderKind::X264)],
         OpenH264 => &[(c"libopenh264", EncoderKind::OpenH264)],
     };
-    for (name, kind) in candidates {
+
+    if !matches!(choice, Auto) {
+        let (name, kind) = candidates[0];
         if AVCodec::find_encoder_by_name(name).is_some() {
+            return Ok((name, kind));
+        }
+        bail!("encoder {:?} is not present in this FFmpeg build", name);
+    }
+
+    for (name, kind) in candidates {
+        if encoder_opens(name, *kind) {
             return Ok((name, *kind));
         }
     }
     bail!(
-        "no H.264 encoder available in this FFmpeg build \
-         (looked for h264_nvenc / libx264 / libopenh264)"
+        "no usable H.264 encoder on this machine. Tried h264_nvenc (needs an \
+         NVIDIA GPU with a recent driver), libx264, and libopenh264."
     )
+}
+
+/// Try to actually open `name` with a minimal configuration. This is the only
+/// reliable way to tell "encoder exists in the build" from "encoder works here".
+fn encoder_opens(name: &CStr, kind: EncoderKind) -> bool {
+    let Some(codec) = AVCodec::find_encoder_by_name(name) else {
+        return false;
+    };
+    let mut ctx = AVCodecContext::new(&codec);
+    ctx.set_width(320);
+    ctx.set_height(240);
+    ctx.set_pix_fmt(ffi::AV_PIX_FMT_YUV420P);
+    ctx.set_time_base(ra(1, 30));
+    ctx.set_framerate(ra(30, 1));
+    ctx.set_bit_rate(200_000);
+    ctx.open(encoder_options(kind)).is_ok()
 }
 
 pub fn transcode(
