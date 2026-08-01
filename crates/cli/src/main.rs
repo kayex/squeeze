@@ -68,17 +68,22 @@ fn process_one(input: &Path, args: &Args, opts: &CompressOptions) -> Result<()> 
     println!("==> {}", input.display());
     println!("    source: {}", human_mb(source_bytes));
 
+    // The callback now fires continuously; only announce each new pass.
+    let mut announced = 0u32;
     let outcome = compress_to_target(input, &output, opts, |p| {
-        println!(
-            "    pass {}/{}: {}x{} @ {:.3} fps, video {} kbps [{}]",
-            p.pass,
-            p.max_passes,
-            p.plan.width,
-            p.plan.height,
-            p.plan.fps(),
-            p.plan.video_bitrate_bps / 1000,
-            p.encoder,
-        );
+        if p.pass != announced {
+            announced = p.pass;
+            println!(
+                "    pass {}/{}: {}x{} @ {:.3} fps, video {} kbps [{}]",
+                p.pass,
+                p.max_passes,
+                p.plan.width,
+                p.plan.height,
+                p.plan.fps(),
+                p.plan.video_bitrate_bps / 1000,
+                p.encoder,
+            );
+        }
     })?;
 
     let pct = 100.0 * outcome.final_bytes as f64 / source_bytes.max(1) as f64;

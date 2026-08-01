@@ -66,6 +66,8 @@ pub struct PassInfo {
     pub max_passes: u32,
     pub plan: EncodePlan,
     pub encoder: String,
+    /// How far through the current pass, 0.0..=1.0.
+    pub fraction: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -81,11 +83,15 @@ pub struct CompressOutcome {
 
 /// Compress `input` to `output`, re-encoding at a lower bitrate until it fits
 /// under `opts.max_bytes` (or `opts.max_passes` is exhausted).
+///
+/// `on_progress` fires at the start of every pass and repeatedly as that pass
+/// advances, so a UI can drive a progress bar. It may be called very frequently;
+/// throttle inside the callback if that matters.
 pub fn compress_to_target(
     input: &Path,
     output: &Path,
     opts: &CompressOptions,
-    mut on_pass: impl FnMut(&PassInfo),
+    mut on_progress: impl FnMut(&PassInfo),
 ) -> Result<CompressOutcome> {
     let info = probe(input)?;
     let (encoder_name, encoder_kind) = encode::resolve_encoder(opts.encoder)?;
@@ -100,12 +106,17 @@ pub fn compress_to_target(
 
     loop {
         passes += 1;
-        on_pass(&PassInfo {
-            pass: passes,
-            max_passes: opts.max_passes,
-            plan: plan.clone(),
-            encoder: encoder_name.to_string_lossy().into_owned(),
-        });
+        let encoder = encoder_name.to_string_lossy().into_owned();
+        let mut report = |fraction: f32| {
+            on_progress(&PassInfo {
+                pass: passes,
+                max_passes: opts.max_passes,
+                plan: plan.clone(),
+                encoder: encoder.clone(),
+                fraction,
+            });
+        };
+        report(0.0);
 
         encode::transcode(
             &input_c,
@@ -115,6 +126,7 @@ pub fn compress_to_target(
             encoder_name,
             encoder_kind,
             matches!(plan.audio, AudioAction::Copy),
+            &mut report,
         )
         .with_context(|| format!("encode pass {passes} failed"))?;
 

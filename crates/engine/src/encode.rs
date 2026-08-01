@@ -90,9 +90,8 @@ pub fn transcode(
     encoder_name: &CStr,
     encoder_kind: EncoderKind,
     copy_audio: bool,
+    on_progress: &mut dyn FnMut(f32),
 ) -> Result<()> {
-    let _ = info; // reserved for future per-frame progress (frames ~= duration * fps)
-
     // ---- input + video decoder ----
     let mut ifmt = AVFormatContextInput::open(input).context("open input")?;
 
@@ -108,9 +107,9 @@ pub fn transcode(
     }
     let video_in = video_in.context("input has no video stream")?;
 
-    // Cache audio time base / params before we start borrowing ifmt mutably for
-    // reads. (Video uses the decoder's pkt_timebase, so no cache needed there.)
+    // Cache time bases / params before we start borrowing ifmt mutably for reads.
     let audio_in_tb = audio_in.map(|i| ifmt.streams()[i].time_base);
+    let video_in_tb = ifmt.streams()[video_in].time_base;
     let audio_par = audio_in.map(|i| ifmt.streams()[i].codecpar().clone());
 
     let mut dec_ctx = {
@@ -218,6 +217,12 @@ pub fn transcode(
     while let Some(mut packet) = ifmt.read_packet().context("read packet")? {
         let idx = packet.stream_index as usize;
         if idx == video_in {
+            // Read position through the source is a good proxy for pass progress.
+            if packet.pts != ffi::AV_NOPTS_VALUE && info.duration_s > 0.0 {
+                let secs =
+                    packet.pts as f64 * video_in_tb.num as f64 / video_in_tb.den.max(1) as f64;
+                on_progress((secs / info.duration_s).clamp(0.0, 1.0) as f32);
+            }
             dec_ctx.send_packet(Some(&packet)).context("decode submit")?;
             loop {
                 let mut frame = match dec_ctx.receive_frame() {
