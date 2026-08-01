@@ -385,8 +385,12 @@ fn toggle(ui: &mut egui::Ui, label: &str, on: bool, seg: Seg) -> egui::Response 
         },
     };
     // On: filled, with dark text for contrast. Off: still a visible cell.
+    //
+    // The lit stroke is deliberately darker than the fill it sits on. Matching
+    // it to the fill erases the seam between two adjacent lit cells, and the
+    // pair then reads as one phrase ("Keep 60 fps No audio").
     let (fill, stroke, text) = if on {
-        (theme::CYAN, theme::CYAN, theme::BG)
+        (theme::CYAN, theme::CYAN.gamma_multiply(0.55), theme::BG)
     } else {
         (theme::SURFACE, theme::BORDER, theme::TEXT_DIM)
     };
