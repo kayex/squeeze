@@ -1,7 +1,7 @@
 //! Turn a [`MediaInfo`] + size budget into concrete encode settings, and
 //! shrink the plan when a pass overshoots the ceiling.
 //!
-//! This module is pure arithmetic — no FFmpeg — so the heuristics are easy to
+//! This module is pure arithmetic, with no FFmpeg, so the heuristics are easy to
 //! reason about and tweak.
 
 use crate::probe::MediaInfo;

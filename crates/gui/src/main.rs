@@ -1,10 +1,10 @@
-//! squeeze — drop gameplay clips in, get Discord-sized MP4s out.
+//! squeeze: drop gameplay clips in, get Discord-sized MP4s out.
 //!
 //! Zero configuration beyond a size budget: files are written next to their
 //! source with a `_discord` suffix. Encoding runs on a background worker so the
 //! UI stays responsive; progress is pushed back over a channel.
 
-// Release builds are a GUI app — don't pop a console window on Windows.
+// Release builds are a GUI app, so don't pop a console window on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod theme;
@@ -127,7 +127,7 @@ impl App {
                 let repaint = ctx.clone();
                 let mut last = -1.0f32;
                 let result = compress_to_target(&item.path, &output, &opts, |p| {
-                    // Fires per packet — only forward meaningful changes.
+                    // Fires per packet, so only forward meaningful changes.
                     if (p.fraction - last).abs() < 0.01 && p.fraction > 0.0 {
                         return;
                     }
@@ -178,7 +178,7 @@ impl App {
             logo,
         };
 
-        // Files can also arrive as arguments — dropping them on the .exe icon in
+        // Files can also arrive as arguments: dropping them on the .exe icon in
         // Explorer, or "Open with", passes them this way rather than as a drop.
         for arg in std::env::args_os().skip(1) {
             app.enqueue(PathBuf::from(arg));
@@ -492,7 +492,7 @@ fn main() -> eframe::Result<()> {
         .with_title("squeeze");
 
     // The icon embedded in the .exe covers Explorer, but winit doesn't reuse it
-    // for the title bar / Alt-Tab — that needs setting here as well.
+    // for the title bar / Alt-Tab, so that needs setting here as well.
     //
     // macOS gets the padded variant: the Dock expects artwork within a ~80% safe
     // area, so a full-bleed icon sits noticeably larger than every other app.

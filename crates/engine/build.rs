@@ -15,10 +15,10 @@ fn main() {
 
     // Superset of what static FFmpeg (avcodec/avformat/avfilter/swscale/
     // swresample + zlib/dav1d) commonly needs on MSVC. Listing extras is safe;
-    // omitting a needed one is a link error — so err toward completeness.
+    // omitting a needed one is a link error, so err toward completeness.
     const SYS_LIBS: &[&str] = &[
         "bcrypt",   // crypto primitives
-        "ncrypt",   // CNG key storage — avformat schannel TLS (tls_schannel.o)
+        "ncrypt",   // CNG key storage for avformat schannel TLS (tls_schannel.o)
         "secur32",  // SSPI
         "crypt32",  // cert store
         "advapi32", // registry / legacy crypto

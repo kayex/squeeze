@@ -14,7 +14,7 @@ winresource = "0.1"
 # See the gui crate for why this block is required rather than optional.
 [package.metadata.winresource]
 ProductName = "squeeze"
-FileDescription = "squeeze CLI — shrink ShadowPlay clips for Discord"
+FileDescription = "squeeze CLI: shrink ShadowPlay clips for Discord"
 OriginalFilename = "squeeze-cli.exe"
 InternalName = "squeeze-cli"
 CompanyName = "Johan Vester"

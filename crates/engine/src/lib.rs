@@ -1,4 +1,4 @@
-//! engine — size-targeted H.264 compression for sharing clips on Discord.
+//! engine: size-targeted H.264 compression for sharing clips on Discord.
 //!
 //! Decode/encode/mux happen IN-PROCESS via FFmpeg's libav* (the `rsmpeg` crate);
 //! there is no shelled-out `ffmpeg.exe`. The default encoder is NVENC.
@@ -18,7 +18,7 @@ use std::ffi::CString;
 use std::path::{Path, PathBuf};
 
 /// Which H.264 encoder to use. `Auto` prefers NVENC, then libx264, then
-/// libopenh264 — whichever the FFmpeg build provides.
+/// libopenh264, whichever the FFmpeg build provides.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Encoder {
     #[default]

@@ -1,11 +1,11 @@
-//! squeeze-cli — the headless companion to the squeeze GUI.
+//! squeeze-cli: the headless companion to the squeeze GUI.
 //!
 //! Usage:
 //!   squeeze-cli [OPTIONS] <INPUT>...
 //!
 //! Compresses each input to an MP4 (H.264 + faststart) that fits under a size
 //! ceiling, written next to the input with a suffix. The encode runs in-process
-//! via libav* (NVENC by default) — no ffmpeg.exe is invoked.
+//! via libav* (NVENC by default); no ffmpeg.exe is invoked.
 
 use anyhow::{bail, Context, Result};
 use engine::{compress_to_target, CompressOptions, Encoder};
@@ -184,7 +184,7 @@ fn next_val(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String>
 
 fn print_help() {
     eprintln!(
-        "squeeze-cli — compress gameplay clips to fit under a size limit (for Discord)\n\
+        "squeeze-cli: compress gameplay clips to fit under a size limit (for Discord)\n\
 \n\
 USAGE:\n\
     squeeze-cli [OPTIONS] <INPUT>...\n\

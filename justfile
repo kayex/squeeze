@@ -1,6 +1,6 @@
-# squeeze dev tasks — run `just` to list them.
+# squeeze dev tasks. Run `just` to list them.
 # Local recipes target macOS (system FFmpeg, no NVENC). The Windows .exe is
-# built in GitHub Actions (see the ci-* recipes) — see docs/deploy-and-test.md.
+# built in GitHub Actions (see the ci-* recipes); see docs/deploy-and-test.md.
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
 artifact := "squeeze-windows-x64"
@@ -71,7 +71,7 @@ sample OUT="/tmp/shadowplay_sample.mp4":
     @echo "wrote {{OUT}}"
 
 # Build assets/icon.ico (+ icon-256.png) from a logo: SVG, PNG, or anything
-# ImageMagick reads. Windows needs ONE .ico holding several sizes — Explorer,
+# ImageMagick reads. Windows needs ONE .ico holding several sizes, because Explorer,
 # the taskbar and Alt-Tab each pick a different one.
 #   just icon ~/Desktop/logo.svg
 #
@@ -82,7 +82,7 @@ icon SOURCE OUT="assets/icon.ico":
     src="{{SOURCE}}"; out="{{OUT}}"
     [ -f "$src" ] || { echo "no such file: $src" >&2; exit 1; }
     for t in magick icotool; do
-        command -v $t >/dev/null || { echo "missing $t — brew install imagemagick icoutils" >&2; exit 1; }
+        command -v $t >/dev/null || { echo "missing $t. Install it: brew install imagemagick icoutils" >&2; exit 1; }
     done
     # Microsoft's baseline is 16/24/32/48/256; 64 and 128 fill in HiDPI steps.
     sizes="16 24 32 48 64 128 256"
@@ -90,7 +90,7 @@ icon SOURCE OUT="assets/icon.ico":
 
     case "${src##*.}" in
       svg|SVG)
-        command -v rsvg-convert >/dev/null || { echo "missing rsvg-convert — brew install librsvg" >&2; exit 1; }
+        command -v rsvg-convert >/dev/null || { echo "missing rsvg-convert. Install it: brew install librsvg" >&2; exit 1; }
         # Render each size straight from vector: far crisper at 16/24px than
         # downscaling one big raster.
         for s in $sizes; do rsvg-convert -w "$s" -h "$s" "$src" -o "$tmp/$s.png"; done
@@ -98,9 +98,9 @@ icon SOURCE OUT="assets/icon.ico":
       *)
         w=$(magick identify -format '%w' "$src[0]")
         h=$(magick identify -format '%h' "$src[0]")
-        [ "$w" = "$h" ] || echo "note: source is ${w}x${h} (not square) — padding to square on transparency"
+        [ "$w" = "$h" ] || echo "note: source is ${w}x${h} (not square), padding to square on transparency"
         if [ "$w" -lt 256 ] || [ "$h" -lt 256 ]; then
-            echo "warning: source is only ${w}x${h} — supply >=256x256 (or an SVG) for a sharp large icon"
+            echo "warning: source is only ${w}x${h}; supply >=256x256 (or an SVG) for a sharp large icon"
         fi
         m=$(( w > h ? w : h ))
         magick "$src[0]" -background none -gravity center -extent "${m}x${m}" "$tmp/sq.png"
@@ -151,7 +151,7 @@ icon-preview ICO="assets/icon.ico" OUT="assets/icon_preview.png":
     tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
     # Frame order inside an .ico varies, so split and select by geometry.
     magick "{{ICO}}" -background none -set filename:s '%wx%h' "$tmp/f_%[filename:s].png"
-    # An array, not a string of paths — the latter silently collapses into one
+    # An array, not a string of paths: the latter silently collapses into one
     # filename under shells that don't word-split (zsh), yielding a 1-tile strip.
     args=()
     for s in 256 48 32 16; do
@@ -166,7 +166,7 @@ icon-preview ICO="assets/icon.ico" OUT="assets/icon_preview.png":
     # +repage before -flatten: the appended image inherits the first frame's page
     # canvas, and flatten renders onto that, cropping everything past it.
     magick "${args[@]}" +append +repage -background '#1e1e22' -flatten "{{OUT}}"
-    echo "wrote {{OUT}} ($(magick identify -format '%wx%h' "{{OUT}}")) — 256px, then 48/32/16px magnified"
+    echo "wrote {{OUT}} ($(magick identify -format '%wx%h' "{{OUT}}")): 256px, then 48/32/16px magnified"
 
 # Format and lint
 fmt:
@@ -179,22 +179,22 @@ clippy:
 clean:
     cargo clean
 
-# Tag a release and push it — CI then builds and drafts the GitHub release.
+# Tag a release and push it. CI then builds and drafts the GitHub release.
 #   just release 0.1.0
 release VERSION:
     #!/usr/bin/env bash
     set -euo pipefail
     v="{{VERSION}}"
     [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || { echo "version should look like 1.2.3, got '$v'" >&2; exit 1; }
-    [ -z "$(git status --porcelain)" ] || { echo "working tree is dirty — commit first" >&2; exit 1; }
+    [ -z "$(git status --porcelain)" ] || { echo "working tree is dirty; commit first" >&2; exit 1; }
     # Keep the tag and the crate versions in step; FileVersion comes from Cargo.
     for f in crates/cli/Cargo.toml crates/gui/Cargo.toml; do
         have=$(grep -m1 '^version = ' "$f" | cut -d'"' -f2)
-        [ "$have" = "$v" ] || { echo "$f says version $have, tagging $v — bump it first" >&2; exit 1; }
+        [ "$have" = "$v" ] || { echo "$f says version $have, tagging $v; bump it first" >&2; exit 1; }
     done
     git tag -a "v$v" -m "squeeze v$v"
     git push origin "v$v"
-    echo "pushed tag v$v — watch: gh run watch \$(gh run list --workflow release.yml --limit 1 --json databaseId -q '.[0].databaseId')"
+    echo "pushed tag v$v. Watch: gh run watch \$(gh run list --workflow release.yml --limit 1 --json databaseId -q '.[0].databaseId')"
 
 # --- CI (Windows .exe builds on GitHub Actions) ---
 

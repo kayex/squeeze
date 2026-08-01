@@ -1,6 +1,6 @@
 name: build
 
-# CI for main. Releases live in release.yml — kept separate so that this
+# CI for main. Releases live in release.yml, kept separate so that this
 # workflow's paths-ignore filter can never suppress a tagged release build.
 on:
   push:

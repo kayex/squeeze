@@ -4,12 +4,12 @@ Rust workspace, three crates:
 
 | crate | produces | what it is |
 |---|---|---|
-| `crates/engine` | lib | the encode engine — probe, plan, transcode, size loop |
+| `crates/engine` | lib | the encode engine: probe, plan, transcode, size loop |
 | `crates/gui` | `squeeze.exe` | the app (egui/eframe) |
 | `crates/cli` | `squeeze-cli.exe` | headless CLI |
 
 Decode/encode/mux run **in-process** via FFmpeg's `libav*` libraries (the
-[`rsmpeg`](https://crates.io/crates/rsmpeg) crate) — there is no shelled-out
+[`rsmpeg`](https://crates.io/crates/rsmpeg) crate). There is no shelled-out
 `ffmpeg.exe`. Hardware encoding uses `h264_nvenc`.
 
 Dev tasks go through [`just`](https://github.com/casey/just): run `just` to list
@@ -28,7 +28,7 @@ without a Windows machine.
 4. **Measure and retry**: if the output overshot the ceiling, re-encode at a
    proportionally lower bitrate (up to `--passes`).
 
-Step 4 is the load-bearing one — neither NVENC nor any single-pass encoder
+Step 4 is the load-bearing one: neither NVENC nor any single-pass encoder
 guarantees a hard size cap, so the only way to promise "under N MB" is to check.
 
 `--encoder auto` picks an encoder by **actually opening** each candidate, not by
@@ -36,7 +36,7 @@ name: `h264_nvenc` is compiled into the binary whether or not the machine has an
 NVIDIA GPU, and only fails at open time. Probing is what makes the fallback to
 software encoding work.
 
-## Building on macOS (dev only — no NVENC)
+## Building on macOS (dev only, no NVENC)
 
 macOS has no NVENC, so use `--encoder x264`. This path exists so the engine can
 be compiled and exercised off-Windows; VideoToolbox is a later phase.
@@ -55,14 +55,14 @@ FFmpeg via pkg-config. Homebrew ships FFmpeg 8.x, which matches the pinned
 
 ## Building on Windows
 
-CI does this for you (see below) — build locally only if you're changing the
+CI does this for you (see below), so build locally only if you're changing the
 link setup. You need FFmpeg **development** libraries built **with NVENC**.
 
-### Option A — vcpkg static (how we ship)
+### Option A: vcpkg static (how we ship)
 
 Produces one self-contained `.exe` with no FFmpeg DLLs. NVENC still works
 because FFmpeg loads it at *runtime* from the NVIDIA driver
-(`nvEncodeAPI64.dll`) — it is never linked in — so a fully static build keeps
+(`nvEncodeAPI64.dll`) and it is never linked in, so a fully static build keeps
 hardware encoding.
 
 ```powershell
@@ -79,12 +79,12 @@ cargo build --release -p cli -p gui --features cli/vcpkg,gui/vcpkg
 - `dav1d` gives fast AV1 decode (RTX 40-series ShadowPlay records AV1);
   `openh264` (BSD) is the software-encode fallback.
 - If the MSVC linker complains about system libs, add them in
-  `crates/engine/build.rs` — that's what it's for.
+  `crates/engine/build.rs`, which is what it's for.
 - Don't chase `x64-windows-static` (static CRT) or `+crt-static`: mixing `/MD`
   and `/MT` causes `LNK2038`, and the static-CRT FFmpeg triplet is far more
   failure-prone. `static-md` already gives the single-file win.
 
-### Option B — prebuilt FFmpeg (quicker to get linking)
+### Option B: prebuilt FFmpeg (quicker to get linking)
 
 Download a **shared dev** build from
 [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases) (pick an
@@ -98,7 +98,7 @@ cargo build --release -p cli -p gui
 ```
 
 The DLLs from `C:\ffmpeg\bin` must then sit next to the built `.exe` or be on
-`PATH`. `nvEncodeAPI64.dll` / `nvcuda.dll` come from the NVIDIA driver — never
+`PATH`. `nvEncodeAPI64.dll` / `nvcuda.dll` come from the NVIDIA driver, so never
 bundle those.
 
 > Toolchain: Rust **1.81+**, MSVC. `libclang` (LLVM) is only needed if rsmpeg
@@ -139,7 +139,7 @@ then publish. Set `draft: false` in `release.yml` to publish straight from tags.
 
 ## The icon
 
-`assets/logo.png` is the source — a square, transparent-background export of
+`assets/logo.png` is the source: a square, transparent-background export of
 `assets/icon-new.png` (the original artwork, which had the tile drawn on opaque
 black). To regenerate after changing the artwork:
 
@@ -159,12 +159,12 @@ magick artwork.png -alpha set -fuzz 4% -fill none \
   -trim +repage -background none -gravity center -extent WxW PNG32:assets/logo.png
 ```
 
-Keep the fuzz low — a dark backdrop and a dark design are close enough in colour
+Keep the fuzz low, because a dark backdrop and a dark design are close enough in colour
 that a generous tolerance floods into the artwork itself.
 
 This writes `assets/icon.ico` (embedded into both `.exe`s by each crate's
 `build.rs` via `winresource`) and `assets/icon-256.png` (the GUI window icon).
-Design for **16px** — that's Explorer's list view.
+Design for **16px**, which is Explorer's list view.
 
 Note it uses `icotool`, not ImageMagick's `-define icon:auto-resize`, which
 stores every entry as uncompressed BMP; Windows expects the 256px entry
@@ -173,26 +173,26 @@ PNG-compressed.
 Windows `VERSIONINFO` (Properties → Details) comes from the
 `[package.metadata.winresource]` blocks in each crate's `Cargo.toml`. Without
 them the fields default to the *crate* name, so the app would show as "gui".
-None of it affects the SmartScreen publisher — that comes from a code signature.
+None of it affects the SmartScreen publisher; that comes from a code signature.
 
 ## Code signing
 
 Not signed today. The realistic options for a free, individual-authored,
 EU-based project, in order:
 
-1. **[SignPath Foundation](https://signpath.org/apply)** — free OV-grade signing
+1. **[SignPath Foundation](https://signpath.org/apply)**: free OV-grade signing
    for open-source projects, key held on their HSM, CI integration. They want to
    see a project that's already released and actively maintained, so this comes
    after a couple of releases.
 2. **[Certum Open Source Code Signing](https://shop.certum.eu/code-signing.html)**
-   in the cloud — €49, EU-to-EU, no hardware token needed.
+   in the cloud, €49, EU-to-EU, no hardware token needed.
 
 Do **not** buy an EV certificate: Microsoft removed EV's instant-SmartScreen
 advantage in 2024, so the premium buys nothing here. Azure Artifact Signing is
-unavailable — individual enrolment is US/Canada only.
+unavailable, because individual enrolment is US/Canada only.
 
 Signing does **not** remove the first-download prompt (that's reputation-based),
-and it does **not** prevent Defender false positives — for those, submit to
+and it does **not** prevent Defender false positives. For those, submit to
 [WDSI](https://www.microsoft.com/en-us/wdsi/filesubmission) as "Software
 developer – false positive". What it does fix: the "Unknown publisher" label,
 reputation resetting on every release, and Smart App Control hard-blocking

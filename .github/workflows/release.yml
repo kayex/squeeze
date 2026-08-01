@@ -59,11 +59,11 @@ jobs:
           {
             echo "### Download"
             echo
-            echo "**Just want the app?** Grab \`squeeze.exe\` — it is self-contained, nothing to install."
+            echo "**Just want the app?** Grab \`squeeze.exe\`. It is self-contained, nothing to install."
             echo "The \`.zip\` additionally contains the CLI, the licence and a README."
             echo
-            echo "Needs Windows 10/11 (x64). Uses your NVIDIA GPU (NVENC) when available —"
-            echo "driver 570 or newer — and falls back to software encoding otherwise."
+            echo "Needs Windows 10/11 (x64). Uses your NVIDIA GPU (NVENC) when available,"
+            echo "driver 570 or newer, and falls back to software encoding otherwise."
             echo
             echo "### Windows will warn you"
             echo
@@ -75,7 +75,7 @@ jobs:
             echo "# checksum"
             echo "certutil -hashfile squeeze.exe SHA256"
             echo
-            echo "# provenance — proves it was built by this repo's public workflow"
+            echo "# provenance: proves it was built by this repo's public workflow"
             echo "gh attestation verify squeeze.exe -R ${GITHUB_REPOSITORY}"
             echo '```'
             echo

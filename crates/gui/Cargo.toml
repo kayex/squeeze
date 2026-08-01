@@ -13,10 +13,10 @@ winresource = "0.1"
 
 # Windows shows these in Properties → Details and Task Manager. Without this
 # block the fields default to the *crate* name, so the app would show as "gui".
-# (None of it affects the SmartScreen publisher — that comes from a signature.)
+# (None of it affects the SmartScreen publisher; that comes from a signature.)
 [package.metadata.winresource]
 ProductName = "squeeze"
-FileDescription = "squeeze — shrink ShadowPlay clips for Discord"
+FileDescription = "squeeze: shrink ShadowPlay clips for Discord"
 OriginalFilename = "squeeze.exe"
 InternalName = "squeeze"
 CompanyName = "Johan Vester"

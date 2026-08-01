@@ -30,7 +30,7 @@ jobs:
           restore-keys: cargo-${{ runner.os }}-
 
       # Export the runner's vcpkg location into the env for later steps. NOTE:
-      # ${{ env.VCPKG_INSTALLATION_ROOT }} does NOT work — the env context only
+      # ${{ env.VCPKG_INSTALLATION_ROOT }} does NOT work. The env context only
       # exposes workflow-defined vars, not runner-provided ones. Read it from the
       # actual process env ($env:...) and forward via $GITHUB_ENV instead.
       - name: Configure vcpkg env
@@ -41,7 +41,7 @@ jobs:
 
       # Cache the built FFmpeg static libs/headers directly. We use explicit
       # restore + save (not actions/cache@v6) because that combined action only
-      # saves on a *successful* job — and we want the 30-min FFmpeg build to
+      # saves on a *successful* job, and we want the 30-min FFmpeg build to
       # persist even when a later step (the link) fails. The save runs right
       # after install, before the build, so a failed build can't lose it.
       - name: Restore vcpkg installed tree
