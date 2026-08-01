@@ -63,24 +63,24 @@ point fewer or smaller frames look better than blurry ones.
 3. **Resolution**: 1440p and 4K are kept when there is plenty of bitrate to go
    round (above ~10 Mbit/s) and come down to 1080p when there is not. Below
    ~1.6 Mbit/s they drop again to 720p, and below ~700 kbit/s to 480p.
-   **Keep resolution** in the window (or `--keep-resolution`) overrides this.
+   The **Keep resolution** switch (or `--keep-resolution`) overrides this.
    Clips are never enlarged.
 
 4. **Frame rate**: anything above 45 fps is halved to 30 when the bitrate is
    under ~3 Mbit/s, which is the usual case for clips longer than about
-   20 seconds at 10 MB. **Keep fps** in the window (or `--keep-fps`)
-   overrides this. Variable frame rate, which ShadowPlay records,
-   is converted to constant.
+   20 seconds at 10 MB. The **Keep fps** switch (or `--keep-fps`) overrides
+   this. Variable frame rate, which ShadowPlay records, is converted to
+   constant.
 
 5. **Encoding**: H.264, with the original audio track copied across rather than
-   re-compressed. This runs on the GPU where possible. **No audio** in the
-   window (or `--no-audio`) drops the track and spends its share on video.
+   re-compressed. This runs on the GPU where possible. The **No audio** switch
+   (or `--no-audio`) drops the track and spends its share on video.
 
 6. **Size check**: the finished file is measured, and if it came out over the
    limit it is encoded again at a lower bitrate, up to three attempts. This is
    why the result reliably fits rather than approximately fits.
 
-The window shows the resolution and frame rate settled on for each clip, so a
+Squeeze shows the resolution and frame rate settled on for each clip, so a
 clip that was scaled down is visible at a glance. A 30-second 1440p60 clip aimed
 at 10 MB comes out 1080p30, for instance; the same clip aimed at 50 MB stays
 1440p60.
