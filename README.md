@@ -2,7 +2,7 @@
 
 <img src="assets/icon-256.png" width="88" alt="">
 
-# squeeze
+# Squeeze
 
 </div>
 
@@ -29,7 +29,7 @@ isn't code-signed. If you'd rather check the file first, see
 
 - Windows 10 or 11, 64-bit
 - An NVIDIA GPU with driver 570 or newer, for hardware encoding. Without one,
-  squeeze encodes in software instead, which is slower but gives the same result.
+  Squeeze encodes in software instead, which is slower but gives the same result.
 
 ## Usage
 
@@ -43,7 +43,7 @@ records. Writes H.264 MP4.
 
 ## What happens to your clip
 
-Nothing here is something you do. It is what squeeze works out on its own once
+Nothing here is something you do. It is what Squeeze works out on its own once
 you have picked a size limit. It is described only so the output holds no
 surprises.
 
@@ -123,5 +123,5 @@ See [docs/development.md](docs/development.md).
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE). squeeze links the FFmpeg libraries under the
+MIT. See [LICENSE](LICENSE). Squeeze links the FFmpeg libraries under the
 LGPL v2.1, built without GPL or non-free components.

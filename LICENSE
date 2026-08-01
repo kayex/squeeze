@@ -22,7 +22,7 @@ SOFTWARE.
 
 ---
 
-This application links the FFmpeg libraries (libav*) under the LGPL v2.1.
+Squeeze links the FFmpeg libraries (libav*) under the LGPL v2.1.
 Built LGPL-only (no GPL components such as x264/x265, no nonfree components).
 Distributed binaries include FFmpeg's copyright/license notices; corresponding
 FFmpeg source and the build configuration are available so users may relink.

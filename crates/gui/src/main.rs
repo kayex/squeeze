@@ -309,11 +309,25 @@ impl eframe::App for App {
         egui::Frame::central_panel(ui.style()).show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             ui.horizontal(|ui| {
+                // Fix the row's height before anything goes in it. A horizontal
+                // layout centres each item against the height known at the time
+                // it is added, so the wordmark and mark, which are added first,
+                // would otherwise sit high while the taller plan chips grow the
+                // row beneath them.
+                ui.set_min_height(plan_row_height(ui));
                 if let Some(logo) = &self.logo {
-                    ui.add(egui::Image::new(logo).fit_to_exact_size(egui::vec2(30.0, 30.0)));
+                    // Nudged down to sit against the wordmark's cap height
+                    // rather than its box. The box includes room for the
+                    // descender of the "q", so centring on it leaves the mark
+                    // riding visibly high next to the letters.
+                    const OPTICAL_DROP: f32 = 3.5;
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(30.0, 30.0), egui::Sense::hover());
+                    egui::Image::new(logo)
+                        .paint_at(ui, rect.translate(egui::vec2(0.0, OPTICAL_DROP)));
                     ui.add_space(2.0);
                 }
-                ui.heading("squeeze");
+                ui.heading("Squeeze");
 
                 // Plans sit opposite the title. One is always lit, so the group
                 // reads as a choice without needing a label or button chrome.
@@ -378,6 +392,29 @@ impl eframe::App for App {
             });
         });
     }
+}
+
+/// How tall a plan chip comes out, built the same way [`plan_option`] builds one
+/// so the header row can reserve its height before laying anything out.
+fn plan_row_height(ui: &egui::Ui) -> f32 {
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        "X",
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::proportional(13.5),
+            ..Default::default()
+        },
+    );
+    job.append(
+        "\nX",
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::monospace(10.5),
+            ..Default::default()
+        },
+    );
+    ui.painter().layout_job(job).size().y + ui.spacing().button_padding.y * 2.0
 }
 
 /// A plan: name on top, the limit it allows underneath. Sized to its own content
@@ -781,7 +818,7 @@ fn main() -> eframe::Result<()> {
         .with_min_inner_size([420.0, 320.0])
         // Required for file drops on Windows.
         .with_drag_and_drop(true)
-        .with_title("squeeze");
+        .with_title("Squeeze");
 
     // The icon embedded in the .exe covers Explorer, but winit doesn't reuse it
     // for the title bar / Alt-Tab, so that needs setting here as well.
@@ -803,7 +840,7 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "squeeze",
+        "Squeeze",
         options,
         Box::new(|cc| Ok(Box::new(App::new(cc)))),
     )

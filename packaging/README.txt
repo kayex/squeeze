@@ -1,4 +1,4 @@
-squeeze: shrink NVIDIA ShadowPlay clips to share on Discord
+Squeeze: shrink NVIDIA ShadowPlay clips to share on Discord
 ============================================================
 
   https://github.com/kayex/squeeze
@@ -50,5 +50,5 @@ notes for how to check both.
 LICENCE
 -------
 
-squeeze is MIT licensed. It links the FFmpeg libraries under the LGPL v2.1
+Squeeze is MIT licensed. It links the FFmpeg libraries under the LGPL v2.1
 (built without GPL or non-free components). See LICENSE for details.

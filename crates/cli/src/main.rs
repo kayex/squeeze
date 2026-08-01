@@ -184,7 +184,7 @@ fn next_val(it: &mut impl Iterator<Item = String>, flag: &str) -> Result<String>
 
 fn print_help() {
     eprintln!(
-        "squeeze-cli: compress gameplay clips to fit under a size limit (for Discord)\n\
+        "Squeeze: compress gameplay clips to fit under a size limit (for Discord)\n\
 \n\
 USAGE:\n\
     squeeze-cli [OPTIONS] <INPUT>...\n\

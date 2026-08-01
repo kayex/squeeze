@@ -90,7 +90,7 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          name: squeeze ${{ steps.pkg.outputs.version }}
+          name: Squeeze ${{ steps.pkg.outputs.version }}
           body_path: notes.md
           # Created as a draft so the notes and assets can be eyeballed before
           # anything is public. Flip to false to publish automatically on tag.
