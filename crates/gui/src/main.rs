@@ -316,15 +316,17 @@ impl eframe::App for App {
                 // row beneath them.
                 ui.set_min_height(plan_row_height(ui));
                 if let Some(logo) = &self.logo {
-                    // Nudged down to sit against the wordmark's cap height
-                    // rather than its box. The box includes room for the
-                    // descender of the "q", so centring on it leaves the mark
-                    // riding visibly high next to the letters.
-                    const OPTICAL_DROP: f32 = 3.5;
+                    // Sits slightly above the row's centre line. The eye reads
+                    // the mark as one solid block and weighs it against the
+                    // letters' cap band, which is itself above the text box's
+                    // centre because that box reserves room for the descender of
+                    // the "q". Centring the two boxes therefore looks bottom
+                    // heavy, however even it measures.
+                    const OPTICAL_LIFT: f32 = -0.5;
                     let (rect, _) =
                         ui.allocate_exact_size(egui::vec2(30.0, 30.0), egui::Sense::hover());
                     egui::Image::new(logo)
-                        .paint_at(ui, rect.translate(egui::vec2(0.0, OPTICAL_DROP)));
+                        .paint_at(ui, rect.translate(egui::vec2(0.0, OPTICAL_LIFT)));
                     ui.add_space(2.0);
                 }
                 ui.heading("Squeeze");
