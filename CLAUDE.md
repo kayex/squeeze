@@ -58,6 +58,14 @@ screenshots produced three wrong diagnoses in a row.
   with `ui.painter().layout_job(...)` and pass the result as `min_size`.
 - `with_layout` that is not wrapped in `ui.horizontal` claims **all** remaining
   vertical space and starves everything below it.
+- **Centring a row means measuring it first**, and that measurement is a second
+  copy of the layout waiting to drift. `vertical_centered` cannot centre a
+  horizontal layout (it claims the full width, so it already *is* centred), so
+  the width has to be computed up front and the slack split by hand. Derive it
+  from the same data the row paints, inside one function, rather than writing
+  the widths out next to the widgets: a renamed label or a miscounted seam
+  leaves the row a few pixels off centre and still compiles. `toggle_row` in the
+  GUI is the worked example.
 - `clear_color` defaults to near-black, so any area the UI does not paint shows
   as a dark band. The content frame must fill the viewport.
 - There are **no mipmaps**: pre-scale images to roughly their display size or

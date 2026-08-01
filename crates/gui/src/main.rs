@@ -350,51 +350,16 @@ impl eframe::App for App {
 
             // Switches, styled like the plans and lit when on. A row rather than
             // a stack of checkboxes, so more can be added without it becoming a
-            // list. Rightmost is added first in a right-to-left layout.
+            // list: one line each, and the row re-centres itself.
             ui.add_space(10.0);
-            ui.horizontal(|ui| {
-                // Centred by hand. Wrapping the row in vertical_centered does
-                // nothing, because a horizontal layout claims the full width
-                // and so is already "centred"; the group's own width has to
-                // be measured and the slack split.
-                let group = toggle_width(ui, "Keep fps")
-                    + toggle_width(ui, "Keep resolution")
-                    + toggle_width(ui, "No audio")
-                    - 2.0;
-                ui.add_space(((ui.available_width() - group) / 2.0).max(0.0));
-                // Cells butt together: -1 so the neighbours' strokes land on
-                // top of each other rather than reading as a 2px divider.
-                ui.spacing_mut().item_spacing.x = -1.0;
-                // Left to right, so each cell can be told whether the
-                // neighbour it shares a seam with is hovered before it paints
-                // that seam.
-                let fps = toggle(ui, "Keep fps", self.keep_fps, Seg::First, false, false);
-                let res = toggle(
-                    ui,
-                    "Keep resolution",
-                    self.keep_resolution,
-                    Seg::Middle,
-                    self.keep_fps,
-                    fps.hovered(),
-                );
-                let audio = toggle(
-                    ui,
-                    "No audio",
-                    self.no_audio,
-                    Seg::Last,
-                    self.keep_resolution,
-                    res.hovered(),
-                );
-                if fps.clicked() {
-                    self.keep_fps = !self.keep_fps;
-                }
-                if res.clicked() {
-                    self.keep_resolution = !self.keep_resolution;
-                }
-                if audio.clicked() {
-                    self.no_audio = !self.no_audio;
-                }
-            });
+            toggle_row(
+                ui,
+                &mut [
+                    ("Keep fps", &mut self.keep_fps),
+                    ("Keep resolution", &mut self.keep_resolution),
+                    ("No audio", &mut self.no_audio),
+                ],
+            );
             ui.add_space(12.0);
 
             drop_zone(ui, hovering);
@@ -474,10 +439,60 @@ enum Seg {
     First,
     Middle,
     Last,
+    /// A group of one: rounded on both ends, with no seam to draw.
+    Only,
 }
 
-/// How wide [`toggle`] will come out for a given label, so a row of them can be
-/// centred before any of them is laid out.
+/// A horizontal group of joined on/off switches, centred in the available
+/// width, flipping the bool it is handed when a cell is clicked.
+///
+/// Everything positional is derived from the slice: where the rounded ends go,
+/// which cells own a seam, and the width the row is centred by. That last one
+/// is why this exists rather than a hand-written row. egui cannot centre a
+/// horizontal layout for us (it claims the full width, so it is already
+/// "centred"), so the row has to be measured before it is laid out, and a
+/// measurement written out separately from the cells is free to disagree with
+/// them: a renamed label would leave the row a few pixels off centre without
+/// failing to compile. Measuring the same slice that gets painted makes that
+/// unrepresentable.
+fn toggle_row(ui: &mut egui::Ui, cells: &mut [(&str, &mut bool)]) {
+    // Cells butt together: the shared edge overlaps by a pixel so the
+    // neighbours' strokes land on top of each other rather than reading as a
+    // 2px divider. Every seam costs the row this much width.
+    const OVERLAP: f32 = 1.0;
+
+    ui.horizontal(|ui| {
+        let width: f32 = cells.iter().map(|(label, _)| toggle_width(ui, label)).sum();
+        let seams = cells.len().saturating_sub(1) as f32;
+        ui.add_space(((ui.available_width() - (width - seams * OVERLAP)) / 2.0).max(0.0));
+        ui.spacing_mut().item_spacing.x = -OVERLAP;
+
+        // Left to right, so each cell knows whether the neighbour it shares a
+        // seam with is lit or hovered before it paints that seam. Carried along
+        // rather than read back out of `cells`, which is borrowed by the loop.
+        let (mut prev_on, mut prev_hovered) = (false, false);
+        let last = cells.len().saturating_sub(1);
+        for (i, (label, on)) in cells.iter_mut().enumerate() {
+            let seg = match (i == 0, i == last) {
+                (true, true) => Seg::Only,
+                (true, false) => Seg::First,
+                (false, true) => Seg::Last,
+                (false, false) => Seg::Middle,
+            };
+            let response = toggle(ui, label, **on, seg, prev_on, prev_hovered);
+            // The state as painted, so the seam to the right of a cell clicked
+            // this frame matches the cell the user is looking at.
+            (prev_on, prev_hovered) = (**on, response.hovered());
+            if response.clicked() {
+                **on = !**on;
+            }
+        }
+    });
+}
+
+/// How wide [`toggle`] will come out for a given label, before laying it out.
+/// Kept next to `toggle` so the two stay in step: this has to account for every
+/// bit of space `toggle` allocates.
 fn toggle_width(ui: &egui::Ui, label: &str) -> f32 {
     let mut job = egui::text::LayoutJob::default();
     job.append(
@@ -517,6 +532,7 @@ fn toggle(
             se: 0,
         },
         Seg::Middle => egui::CornerRadius::ZERO,
+        Seg::Only => egui::CornerRadius::same(r),
         Seg::Last => egui::CornerRadius {
             ne: r,
             se: r,
@@ -563,7 +579,7 @@ fn toggle(
         // The seam, drawn by the cell added second so it lands on top of its
         // neighbour's edge, and tinted to stay legible whether it divides two
         // lit cells or a lit from an unlit one.
-        if seg != Seg::First {
+        if matches!(seg, Seg::Middle | Seg::Last) {
             // An unlit cell being hovered draws a cyan border, and this seam is
             // part of that border. Painted after both cells, it would otherwise
             // overwrite the right cell's edge and leave its outline broken.
