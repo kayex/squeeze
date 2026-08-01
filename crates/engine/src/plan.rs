@@ -111,7 +111,16 @@ fn target_video_bps(info: &MediaInfo, opts: &CompressOptions, audio: AudioAction
     let usable_bits = opts.max_bytes as f64 * 8.0 * opts.margin;
     let audio_bits = audio_bytes(info, audio) * 8.0;
     let video_bits = (usable_bits - audio_bits).max(0.0);
-    ((video_bits / info.duration_s).round() as i64).max(MIN_VIDEO_BPS)
+    let mut bps = (video_bits / info.duration_s).round() as i64;
+
+    // Never spend more than the source itself did: a clip that already fits the
+    // budget would otherwise be re-encoded at a *higher* rate and come out
+    // bigger than it went in. Re-encoding can't recover detail that was never
+    // there, so the source rate is the sensible ceiling.
+    if info.video_bitrate_bps > 0 {
+        bps = bps.min(info.video_bitrate_bps);
+    }
+    bps.max(MIN_VIDEO_BPS)
 }
 
 /// Step the resolution down only as far as the bitrate warrants. Above ~10 Mbit/s

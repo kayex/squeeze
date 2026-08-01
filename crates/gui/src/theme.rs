@@ -54,7 +54,9 @@ fn apply_to(style: &mut egui::Style) {
         &mut w.active,
         &mut w.open,
     ] {
-        s.corner_radius = egui::CornerRadius::same(8);
+        // Small: a checkbox is only ~14px, so a large radius rounds it into a
+        // circle and it reads as a radio button.
+        s.corner_radius = egui::CornerRadius::same(4);
         s.bg_stroke = egui::Stroke::new(1.0, BORDER);
         s.fg_stroke = egui::Stroke::new(1.0, TEXT);
     }

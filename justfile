@@ -34,6 +34,33 @@ run FILE *ARGS:
 gui *FILES:
     cargo run -p gui --features system --release -- {{FILES}}
 
+# Screenshot the running GUI (macOS). Captures ONLY the app window, never the
+# rest of the screen. Needs Screen Recording permission for the terminal, plus
+# `pip3 install pyobjc-framework-Quartz`.
+#   just shot                      -> empty window
+#   just shot ~/clip.mp4 DELAY=8   -> mid-encode, so progress bars are visible
+shot *FILES:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out="${OUT:-/tmp/squeeze_shot.png}"; delay="${DELAY:-5}"
+    cargo build --release -p gui --features system >/dev/null
+    ./target/release/squeeze {{FILES}} >/tmp/squeeze_shot.log 2>&1 &
+    pid=$!
+    trap 'kill $pid 2>/dev/null || true' EXIT
+    sleep "$delay"
+    wid=$(python3 -c "
+    import Quartz
+    wl = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
+        Quartz.kCGNullWindowID)
+    for w in wl:
+        if w.get('kCGWindowOwnerName') == 'squeeze':
+            print(w['kCGWindowNumber']); break
+    ")
+    [ -n "$wid" ] || { echo "no squeeze window found" >&2; exit 1; }
+    screencapture -x -o -l "$wid" "$out"
+    echo "wrote $out ($(magick identify -format '%wx%h' "$out"))"
+
 # Generate a ShadowPlay-like test clip (1080p60 H.264 High + AAC, 30s)
 sample OUT="/tmp/shadowplay_sample.mp4":
     ffmpeg -hide_banner -y \

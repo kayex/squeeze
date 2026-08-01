@@ -17,6 +17,9 @@ pub struct MediaInfo {
     pub has_audio: bool,
     /// Audio bitrate in bits/s, or 0 if the container didn't record it.
     pub audio_bitrate_bps: i64,
+    /// Video bitrate in bits/s, or 0 if it couldn't be determined. Used as a
+    /// ceiling so a generous budget never re-encodes a clip *larger* than it was.
+    pub video_bitrate_bps: i64,
     pub video_codec: String,
 }
 
@@ -39,6 +42,7 @@ pub fn probe(path: &Path) -> Result<MediaInfo> {
         fps_den: 1,
         has_audio: false,
         audio_bitrate_bps: 0,
+        video_bitrate_bps: 0,
         video_codec: String::new(),
     };
 
@@ -68,6 +72,9 @@ pub fn probe(path: &Path) -> Result<MediaInfo> {
                     info.fps_den = afr.den;
                 }
             }
+            if par.bit_rate > 0 {
+                info.video_bitrate_bps = par.bit_rate;
+            }
             if let Some(codec) = AVCodec::find_decoder(par.codec_id) {
                 info.video_codec = codec.name().to_string_lossy().into_owned();
             }
@@ -92,6 +99,21 @@ pub fn probe(path: &Path) -> Result<MediaInfo> {
         // Last-resort fallback; CFR normalization still needs a target rate.
         info.fps_num = 30;
         info.fps_den = 1;
+    }
+
+    // MP4 frequently leaves the per-stream bitrate at zero. Fall back to the
+    // container's overall rate, or failing that the file size, minus audio.
+    if info.video_bitrate_bps == 0 {
+        let total_bps = if ifmt.bit_rate > 0 {
+            ifmt.bit_rate
+        } else {
+            std::fs::metadata(path)
+                .map(|m| ((m.len() as f64 * 8.0) / info.duration_s) as i64)
+                .unwrap_or(0)
+        };
+        if total_bps > 0 {
+            info.video_bitrate_bps = (total_bps - info.audio_bitrate_bps).max(0);
+        }
     }
 
     Ok(info)
