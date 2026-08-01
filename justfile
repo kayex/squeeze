@@ -115,17 +115,22 @@ icon-preview ICO="assets/icon.ico" OUT="assets/icon_preview.png":
     tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
     # Frame order inside an .ico varies, so split and select by geometry.
     magick "{{ICO}}" -background none -set filename:s '%wx%h' "$tmp/f_%[filename:s].png"
-    args=""
+    # An array, not a string of paths — the latter silently collapses into one
+    # filename under shells that don't word-split (zsh), yielding a 1-tile strip.
+    args=()
     for s in 256 48 32 16; do
         f="$tmp/f_${s}x${s}.png"
         [ -f "$f" ] || continue
         # Magnify the small entries with nearest-neighbour so their real pixels show.
         if [ "$s" = "256" ]; then magick "$f" -resize 256x256 "$tmp/l$s.png"
         else magick "$f" -filter point -resize 128x128 "$tmp/l$s.png"; fi
-        args="$args $tmp/l$s.png"
+        args+=("$tmp/l$s.png")
     done
-    magick $args +append -background '#1e1e22' -flatten "{{OUT}}"
-    echo "wrote {{OUT}} (256px, then 48/32/16px magnified)"
+    [ ${#args[@]} -gt 0 ] || { echo "no frames extracted from {{ICO}}" >&2; exit 1; }
+    # +repage before -flatten: the appended image inherits the first frame's page
+    # canvas, and flatten renders onto that, cropping everything past it.
+    magick "${args[@]}" +append +repage -background '#1e1e22' -flatten "{{OUT}}"
+    echo "wrote {{OUT}} ($(magick identify -format '%wx%h' "{{OUT}}")) — 256px, then 48/32/16px magnified"
 
 # Format and lint
 fmt:

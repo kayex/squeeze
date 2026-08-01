@@ -139,13 +139,28 @@ then publish. Set `draft: false` in `release.yml` to publish straight from tags.
 
 ## The icon
 
-`assets/icon.svg` is the source. To regenerate after changing it — or to swap in
-different artwork:
+`assets/logo.png` is the source — a square, transparent-background export of
+`assets/icon-new.png` (the original artwork, which had the tile drawn on opaque
+black). To regenerate after changing the artwork:
 
 ```bash
-just icon assets/icon.svg     # or any PNG / SVG
+just icon assets/logo.png     # any PNG or SVG works
 just icon-preview             # magnifies 16/32/48px to check legibility
 ```
+
+**Artwork needs a transparent background.** Windows composites icons over
+whatever is behind them, so an opaque backdrop shows up as a square block in
+Explorer. If an export has one, cut it before generating:
+
+```bash
+magick artwork.png -alpha set -fuzz 4% -fill none \
+  -draw "alpha 0,0 floodfill" -draw "alpha 1253,0 floodfill" \
+  -draw "alpha 0,1253 floodfill" -draw "alpha 1253,1253 floodfill" \
+  -trim +repage -background none -gravity center -extent WxW PNG32:assets/logo.png
+```
+
+Keep the fuzz low — a dark backdrop and a dark design are close enough in colour
+that a generous tolerance floods into the artwork itself.
 
 This writes `assets/icon.ico` (embedded into both `.exe`s by each crate's
 `build.rs` via `winresource`) and `assets/icon-256.png` (the GUI window icon).
