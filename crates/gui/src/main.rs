@@ -322,7 +322,7 @@ impl eframe::App for App {
                     // centre because that box reserves room for the descender of
                     // the "q". Centring the two boxes therefore looks bottom
                     // heavy, however even it measures.
-                    const OPTICAL_LIFT: f32 = -0.5;
+                    const OPTICAL_LIFT: f32 = 0.5;
                     let (rect, _) =
                         ui.allocate_exact_size(egui::vec2(30.0, 30.0), egui::Sense::hover());
                     egui::Image::new(logo)
