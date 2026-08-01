@@ -1,0 +1,24 @@
+[package]
+name = "gui"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Drag-and-drop desktop UI for squeeze2."
+
+[[bin]]
+name = "squeeze-gui"
+path = "src/main.rs"
+
+[dependencies]
+engine = { path = "../engine" }
+# glow (OpenGL) keeps the binary smaller than the wgpu backend; no webview.
+eframe = { version = "0.35", default-features = false, features = [
+    "glow",
+    "default_fonts",
+] }
+
+[features]
+default = []
+vcpkg = ["engine/vcpkg"]
+system = ["engine/system"]

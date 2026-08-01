@@ -30,6 +30,10 @@ build:
 run FILE *ARGS:
     cargo run -p cli --features system --release -- --encoder x264 {{ARGS}} "{{FILE}}"
 
+# Launch the drag-and-drop GUI. Optional files are queued immediately.
+gui *FILES:
+    cargo run -p gui --features system --release -- {{FILES}}
+
 # Generate a ShadowPlay-like test clip (1080p60 H.264 High + AAC, 30s)
 sample OUT="/tmp/shadowplay_sample.mp4":
     ffmpeg -hide_banner -y \
