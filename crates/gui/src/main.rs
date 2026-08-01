@@ -21,6 +21,20 @@ const BUDGETS: &[(&str, u64)] = &[
     ("500 MB", 500_000_000),
 ];
 
+/// Resolution + frame rate, for showing what a clip is and what it becomes.
+#[derive(Clone, Copy, PartialEq)]
+struct Shape {
+    width: i32,
+    height: i32,
+    fps: f32,
+}
+
+impl std::fmt::Display for Shape {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}×{} · {:.0} fps", self.width, self.height, self.fps)
+    }
+}
+
 #[derive(Clone)]
 enum Status {
     Queued,
@@ -29,10 +43,12 @@ enum Status {
         max_passes: u32,
         fraction: f32,
         encoder: String,
+        out: Shape,
     },
     Done {
         bytes: u64,
         fits: bool,
+        out: Shape,
     },
     Failed(String),
 }
@@ -40,6 +56,8 @@ enum Status {
 struct Job {
     path: PathBuf,
     source_bytes: u64,
+    /// From probing the file when it was dropped; None if that failed.
+    source: Option<Shape>,
     status: Status,
 }
 
@@ -48,6 +66,7 @@ struct WorkItem {
     id: usize,
     path: PathBuf,
     max_bytes: u64,
+    keep_fps: bool,
 }
 
 struct Msg {
@@ -60,6 +79,8 @@ struct App {
     updates: Receiver<Msg>,
     work: Sender<WorkItem>,
     budget: u64,
+    /// Don't let the encoder halve high frame rates to buy quality.
+    keep_fps: bool,
 }
 
 impl App {
@@ -74,6 +95,7 @@ impl App {
             while let Ok(item) = work_rx.recv() {
                 let opts = CompressOptions {
                     max_bytes: item.max_bytes,
+                    keep_fps: item.keep_fps,
                     ..Default::default()
                 };
                 let output = output_path(&item.path);
@@ -94,6 +116,11 @@ impl App {
                             max_passes: p.max_passes,
                             fraction: p.fraction,
                             encoder: p.encoder.clone(),
+                            out: Shape {
+                                width: p.plan.width,
+                                height: p.plan.height,
+                                fps: p.plan.fps() as f32,
+                            },
                         },
                     });
                     repaint.request_repaint();
@@ -103,6 +130,11 @@ impl App {
                     Ok(o) => Status::Done {
                         bytes: o.final_bytes,
                         fits: o.fits,
+                        out: Shape {
+                            width: o.last_plan.width,
+                            height: o.last_plan.height,
+                            fps: o.last_plan.fps() as f32,
+                        },
                     },
                     Err(e) => Status::Failed(format!("{e:#}")),
                 };
@@ -116,6 +148,7 @@ impl App {
             updates: msg_rx,
             work: work_tx,
             budget: BUDGETS[0].1,
+            keep_fps: false,
         };
 
         // Files can also arrive as arguments — dropping them on the .exe icon in
@@ -137,16 +170,35 @@ impl App {
         }
         let source_bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
         let id = self.jobs.len();
+
+        // Probing up front shows the clip's resolution while it waits, and
+        // rejects anything unreadable immediately rather than at encode time.
+        let probed = engine::probe(&path);
+        let source = probed.as_ref().ok().map(|i| Shape {
+            width: i.width,
+            height: i.height,
+            fps: i.fps() as f32,
+        });
+        let status = match &probed {
+            Ok(_) => Status::Queued,
+            Err(e) => Status::Failed(format!("{e:#}")),
+        };
+        let queued = matches!(status, Status::Queued);
+
         self.jobs.push(Job {
             path: path.clone(),
             source_bytes,
-            status: Status::Queued,
+            source,
+            status,
         });
-        let _ = self.work.send(WorkItem {
-            id,
-            path,
-            max_bytes: self.budget,
-        });
+        if queued {
+            let _ = self.work.send(WorkItem {
+                id,
+                path,
+                max_bytes: self.budget,
+                keep_fps: self.keep_fps,
+            });
+        }
     }
 }
 
@@ -188,6 +240,15 @@ impl eframe::App for App {
                     }
                     ui.label("Fit under:");
                 });
+            });
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut self.keep_fps, "Keep original frame rate")
+                    .on_hover_text(
+                        "By default 60 fps clips drop to 30 when there aren't enough \
+                         bits to go round, which usually looks better. Tick this to \
+                         keep the frame rate and accept softer frames.\n\n\
+                         Applies to clips added from now on.",
+                    );
             });
             ui.add_space(8.0);
 
@@ -254,7 +315,7 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
         ui.label(egui::RichText::new(name).strong());
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             match &job.status {
-                Status::Done { bytes, fits } => {
+                Status::Done { bytes, fits, .. } => {
                     let text = format!("{} → {}", mb(job.source_bytes), mb(*bytes));
                     if *fits {
                         ui.label(egui::RichText::new(format!("{text}  ✔")).color(
@@ -279,6 +340,22 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
         });
     });
 
+    // What the clip is, and what it's becoming — so a dropped resolution or a
+    // halved frame rate is visible rather than a surprise in the output file.
+    let detail = match &job.status {
+        Status::Running { out, .. } | Status::Done { out, .. } => match job.source {
+            Some(src) if src != *out => format!("{src}  →  {out}"),
+            _ => out.to_string(),
+        },
+        _ => match job.source {
+            Some(src) => src.to_string(),
+            None => String::new(),
+        },
+    };
+    if !detail.is_empty() {
+        ui.label(egui::RichText::new(detail).small().weak());
+    }
+
     match &job.status {
         Status::Queued => {
             ui.add(egui::ProgressBar::new(0.0).text("queued"));
@@ -288,6 +365,7 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
             max_passes,
             fraction,
             encoder,
+            ..
         } => {
             let label = if *pass > 1 {
                 format!("pass {pass}/{max_passes} · {encoder}")
