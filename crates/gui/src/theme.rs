@@ -168,7 +168,7 @@ pub fn gradient_bar(ui: &mut egui::Ui, fraction: f32) {
 
     // Colour is interpolated across the *whole* track, so the gradient stays put
     // as the bar grows rather than stretching with it.
-    let end = lerp_color(CYAN, PURPLE, fraction);
+    let end = mix(CYAN, PURPLE, fraction);
     let mut mesh = egui::Mesh::default();
     mesh.colored_vertex(filled.left_top(), CYAN);
     mesh.colored_vertex(filled.left_bottom(), CYAN);
@@ -191,7 +191,10 @@ pub fn gradient_bar(ui: &mut egui::Ui, fraction: f32) {
     );
 }
 
-fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
+/// Blend `a` toward `b`. Note this is a real blend, unlike `gamma_multiply`,
+/// which scales a premultiplied colour's alpha and so only *fades* it: fine
+/// over a dark backdrop, useless for darkening something drawn on a light fill.
+pub fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     let t = t.clamp(0.0, 1.0);
     let f = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
     Color32::from_rgb(f(a.r(), b.r()), f(a.g(), b.g()), f(a.b(), b.b()))

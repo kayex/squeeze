@@ -301,10 +301,11 @@ impl eframe::App for App {
                     // top of each other rather than reading as a 2px divider.
                     ui.spacing_mut().item_spacing.x = -1.0;
                     // Right-to-left, so the rightmost cell is added first.
-                    if toggle(ui, "No audio", self.no_audio, Seg::Right).clicked() {
+                    if toggle(ui, "No audio", self.no_audio, Seg::Right, self.keep_fps).clicked() {
                         self.no_audio = !self.no_audio;
                     }
-                    if toggle(ui, "Keep 60 fps", self.keep_fps, Seg::Left).clicked() {
+                    if toggle(ui, "Keep 60 fps", self.keep_fps, Seg::Left, self.no_audio).clicked()
+                    {
                         self.keep_fps = !self.keep_fps;
                     }
                 });
@@ -358,17 +359,29 @@ fn plan_option(ui: &mut egui::Ui, tier: &str, size: &str, selected: bool) -> egu
     pinned_button(ui, job, selected)
 }
 
-/// Where a switch sits in its group, which decides the corners it rounds.
+/// Where a switch sits in its group, which decides the corners it rounds and
+/// whether it draws the seam to its neighbour.
 #[derive(Clone, Copy, PartialEq)]
 enum Seg {
     Left,
     Right,
 }
 
-/// An on/off switch drawn as one cell of a joined group, so the pair reads as a
-/// control even when neither is on. A lone lit-or-dim word does not: an option
-/// that is off has nothing to say it can be clicked.
-fn toggle(ui: &mut egui::Ui, label: &str, on: bool, seg: Seg) -> egui::Response {
+/// One cell of a joined on/off group, painted by hand.
+///
+/// Hand-painting buys two things a plain `Button` cannot: a lit cell with no
+/// outer border but a seam still dividing it from its neighbour, and knowledge
+/// of the hover state at paint time, since `allocate_exact_size` hands back the
+/// response before anything is drawn.
+///
+/// `neighbour_on` is only consulted by the left cell, to colour that seam.
+fn toggle(
+    ui: &mut egui::Ui,
+    label: &str,
+    on: bool,
+    seg: Seg,
+    neighbour_on: bool,
+) -> egui::Response {
     let r = 8;
     let corners = match seg {
         Seg::Left => egui::CornerRadius {
@@ -384,37 +397,61 @@ fn toggle(ui: &mut egui::Ui, label: &str, on: bool, seg: Seg) -> egui::Response 
             sw: 0,
         },
     };
-    // On: filled, with dark text for contrast. Off: still a visible cell.
-    //
-    // The lit stroke is deliberately darker than the fill it sits on. Matching
-    // it to the fill erases the seam between two adjacent lit cells, and the
-    // pair then reads as one phrase ("Keep 60 fps No audio").
-    let (fill, stroke, text) = if on {
-        (theme::CYAN, theme::CYAN.gamma_multiply(0.55), theme::BG)
-    } else {
-        (theme::SURFACE, theme::BORDER, theme::TEXT_DIM)
-    };
 
+    let text_colour = if on { theme::BG } else { theme::TEXT_DIM };
     let mut job = egui::text::LayoutJob::default();
     job.append(
         label,
         0.0,
         egui::TextFormat {
             font_id: egui::FontId::proportional(13.0),
-            color: text,
+            color: text_colour,
             ..Default::default()
         },
     );
 
-    let galley = ui.painter().layout_job(job.clone());
+    let galley = ui.painter().layout_job(job);
     let padding = ui.spacing().button_padding;
-    ui.add(
-        egui::Button::new(job)
-            .fill(fill)
-            .stroke(egui::Stroke::new(1.0, stroke))
-            .corner_radius(corners)
-            .min_size(galley.size() + padding * 2.0),
-    )
+    let (rect, response) =
+        ui.allocate_exact_size(galley.size() + padding * 2.0, egui::Sense::click());
+    let hovered = response.hovered();
+
+    // Lit cells carry no outline; the seam below is what separates them. Unlit
+    // cells keep a border so the group reads as a control while it is all off.
+    let (fill, stroke) = match (on, hovered) {
+        (true, true) => (
+            theme::mix(theme::CYAN, egui::Color32::WHITE, 0.18),
+            egui::Stroke::NONE,
+        ),
+        (true, false) => (theme::CYAN, egui::Stroke::NONE),
+        (false, true) => (
+            theme::SURFACE_HI,
+            egui::Stroke::new(1.0, theme::CYAN.gamma_multiply(0.6)),
+        ),
+        (false, false) => (theme::SURFACE, egui::Stroke::new(1.0, theme::BORDER)),
+    };
+
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        painter.rect(rect, corners, fill, stroke, egui::StrokeKind::Inside);
+        painter.galley(rect.center() - galley.size() / 2.0, galley, text_colour);
+
+        // The seam. Drawn by the left cell so it lands once, and tinted to stay
+        // legible whether it divides two lit cells or a lit from an unlit one.
+        if seg == Seg::Left {
+            let colour = if on && neighbour_on {
+                // Blended, not faded: a translucent line over a cyan cell
+                // composites straight back to cyan and vanishes.
+                theme::mix(theme::CYAN, theme::BG, 0.45)
+            } else if on || neighbour_on {
+                theme::BG
+            } else {
+                theme::BORDER
+            };
+            painter.vline(rect.right(), rect.y_range(), egui::Stroke::new(1.0, colour));
+        }
+    }
+    response
 }
 
 /// A selectable button whose width is pinned to its own text.
