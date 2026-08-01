@@ -289,26 +289,34 @@ impl eframe::App for App {
                             self.budget = *bytes;
                         }
                     }
-                    // Only the chosen limit is spelled out, and it sits left of
-                    // the buttons: in a right-to-left layout its width changes
-                    // don't shift them around.
-                    let size = BUDGETS
-                        .iter()
-                        .find(|(_, _, b)| *b == self.budget)
-                        .map(|(_, s, _)| *s)
-                        .unwrap_or("");
-                    ui.label(
-                        egui::RichText::new(format!("Fit under {size}")).color(theme::TEXT_DIM),
-                    );
                 });
             });
-            // Keep every control in the same right-hand column rather than
-            // stranding this one under the title.
+            // The limit goes on the next row, right-aligned so it sits under the
+            // buttons. Sharing their row made it the leftmost item, which in a
+            // right-to-left layout absorbs every width change to its right and
+            // visibly twitched; it also ran into the tier name and read as one
+            // sentence ("Fit under 10 MB Free").
+            //
             // The horizontal wrapper matters: with_layout on its own claims all
             // the remaining vertical space and starves everything below it.
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let size = BUDGETS
+                        .iter()
+                        .find(|(_, _, b)| *b == self.budget)
+                        .map(|(_, s, _)| *s)
+                        .unwrap_or("");
+                    // Right-aligned in a fixed 6 columns: monospace then makes
+                    // "10 MB" and "500 MB" exactly the same width, so switching
+                    // tiers can't nudge the checkbox beside it.
+                    ui.label(
+                        egui::RichText::new(format!("up to {size:>6}"))
+                            .monospace()
+                            .size(11.5)
+                            .color(theme::TEXT_DIM),
+                    );
+                    ui.add_space(14.0);
                     ui.checkbox(&mut self.keep_fps, "Keep original frame rate")
                         .on_hover_text(
                             "By default 60 fps clips drop to 30 when there aren't enough \

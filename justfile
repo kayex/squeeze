@@ -58,6 +58,13 @@ shot *FILES:
             print(w['kCGWindowNumber']); break
     ")
     [ -n "$wid" ] || { echo "no squeeze window found" >&2; exit 1; }
+    # Park the cursor off-window first: hovering a control pops a tooltip that
+    # would sit over whatever we were trying to look at.
+    python3 -c "
+    import Quartz
+    Quartz.CGWarpMouseCursorPosition(Quartz.CGPoint(x=5, y=5))
+    " 2>/dev/null || true
+    sleep 1
     screencapture -x -o -l "$wid" "$out"
     echo "wrote $out ($(magick identify -format '%wx%h' "$out"))"
 
