@@ -40,6 +40,8 @@ pub struct CompressOptions {
     pub encoder: Encoder,
     /// Keep the source frame rate instead of capping 60→30 when bits are tight.
     pub keep_fps: bool,
+    /// Keep the source resolution instead of scaling down when bits are tight.
+    pub keep_resolution: bool,
     /// Stream-copy the source audio (vs. drop it).
     pub include_audio: bool,
 }
@@ -54,6 +56,7 @@ impl Default for CompressOptions {
             max_passes: 3,
             encoder: Encoder::Auto,
             keep_fps: false,
+            keep_resolution: false,
             include_audio: true,
         }
     }

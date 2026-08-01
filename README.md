@@ -62,8 +62,9 @@ point fewer or smaller frames look better than blurry ones.
 
 3. **Resolution**: 1440p and 4K are kept when there is plenty of bitrate to go
    round (above ~10 Mbit/s) and come down to 1080p when there is not. Below
-   ~1.6 Mbit/s they drop again to 720p, and below ~700 kbit/s to 480p. Clips are
-   never enlarged.
+   ~1.6 Mbit/s they drop again to 720p, and below ~700 kbit/s to 480p.
+   **Keep resolution** in the window (or `--keep-resolution`) overrides this.
+   Clips are never enlarged.
 
 4. **Frame rate**: anything above 45 fps is halved to 30 when the bitrate is
    under ~3 Mbit/s, which is the usual case for clips longer than about
@@ -100,6 +101,7 @@ squeeze-cli.exe --max-mb 10 "C:\Videos\clip.mp4"
 | `--suffix <S>` | Output suffix (default `_discord`) |
 | `-o, --outdir <DIR>` | Output directory (default: next to the input) |
 | `--keep-fps` | Don't cap 60fps → 30fps when the budget is tight |
+| `--keep-resolution` | Don't scale the frame down when the budget is tight |
 | `--no-audio` | Drop audio instead of copying it |
 
 ## Verifying a download

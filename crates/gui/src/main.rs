@@ -80,6 +80,7 @@ struct WorkItem {
     path: PathBuf,
     max_bytes: u64,
     keep_fps: bool,
+    keep_resolution: bool,
     no_audio: bool,
 }
 
@@ -95,6 +96,8 @@ struct App {
     budget: u64,
     /// Don't let the encoder halve high frame rates to buy quality.
     keep_fps: bool,
+    /// Don't let the encoder scale the frame down to buy quality.
+    keep_resolution: bool,
     /// Drop the audio track, spending its share of the budget on video.
     no_audio: bool,
     logo: Option<egui::TextureHandle>,
@@ -133,6 +136,7 @@ impl App {
                 let opts = CompressOptions {
                     max_bytes: item.max_bytes,
                     keep_fps: item.keep_fps,
+                    keep_resolution: item.keep_resolution,
                     include_audio: !item.no_audio,
                     ..Default::default()
                 };
@@ -197,6 +201,7 @@ impl App {
             work: work_tx,
             budget: BUDGETS[0].2,
             keep_fps: false,
+            keep_resolution: false,
             no_audio: false,
             logo,
         };
@@ -250,6 +255,7 @@ impl App {
                 path,
                 max_bytes: self.budget,
                 keep_fps: self.keep_fps,
+                keep_resolution: self.keep_resolution,
                 no_audio: self.no_audio,
             });
         }
@@ -351,33 +357,41 @@ impl eframe::App for App {
                 // nothing, because a horizontal layout claims the full width
                 // and so is already "centred"; the group's own width has to
                 // be measured and the slack split.
-                let group = toggle_width(ui, "Keep fps") + toggle_width(ui, "No audio") - 1.0;
+                let group = toggle_width(ui, "Keep fps")
+                    + toggle_width(ui, "Keep resolution")
+                    + toggle_width(ui, "No audio")
+                    - 2.0;
                 ui.add_space(((ui.available_width() - group) / 2.0).max(0.0));
                 // Cells butt together: -1 so the neighbours' strokes land on
                 // top of each other rather than reading as a 2px divider.
                 ui.spacing_mut().item_spacing.x = -1.0;
-                // Left cell first, so the right one can be told whether its
-                // neighbour is hovered before it paints the shared seam.
-                let left = toggle(
+                // Left to right, so each cell can be told whether the
+                // neighbour it shares a seam with is hovered before it paints
+                // that seam.
+                let fps = toggle(ui, "Keep fps", self.keep_fps, Seg::First, false, false);
+                let res = toggle(
                     ui,
-                    "Keep fps",
+                    "Keep resolution",
+                    self.keep_resolution,
+                    Seg::Middle,
                     self.keep_fps,
-                    Seg::Left,
-                    self.no_audio,
-                    false,
+                    fps.hovered(),
                 );
-                let right = toggle(
+                let audio = toggle(
                     ui,
                     "No audio",
                     self.no_audio,
-                    Seg::Right,
-                    self.keep_fps,
-                    left.hovered(),
+                    Seg::Last,
+                    self.keep_resolution,
+                    res.hovered(),
                 );
-                if left.clicked() {
+                if fps.clicked() {
                     self.keep_fps = !self.keep_fps;
                 }
-                if right.clicked() {
+                if res.clicked() {
+                    self.keep_resolution = !self.keep_resolution;
+                }
+                if audio.clicked() {
                     self.no_audio = !self.no_audio;
                 }
             });
@@ -457,8 +471,9 @@ fn plan_option(ui: &mut egui::Ui, tier: &str, size: &str, selected: bool) -> egu
 /// whether it draws the seam to its neighbour.
 #[derive(Clone, Copy, PartialEq)]
 enum Seg {
-    Left,
-    Right,
+    First,
+    Middle,
+    Last,
 }
 
 /// How wide [`toggle`] will come out for a given label, so a row of them can be
@@ -483,8 +498,8 @@ fn toggle_width(ui: &egui::Ui, label: &str) -> f32 {
 /// of the hover state at paint time, since `allocate_exact_size` hands back the
 /// response before anything is drawn.
 ///
-/// `neighbour_on` and `neighbour_hovered` are only consulted by the left cell,
-/// which owns the seam and so has to colour it on behalf of both.
+/// `neighbour_on` and `neighbour_hovered` describe the cell to the *left*, and
+/// are ignored by the first cell in a group, which has no seam to paint.
 fn toggle(
     ui: &mut egui::Ui,
     label: &str,
@@ -495,13 +510,14 @@ fn toggle(
 ) -> egui::Response {
     let r = 8;
     let corners = match seg {
-        Seg::Left => egui::CornerRadius {
+        Seg::First => egui::CornerRadius {
             nw: r,
             sw: r,
             ne: 0,
             se: 0,
         },
-        Seg::Right => egui::CornerRadius {
+        Seg::Middle => egui::CornerRadius::ZERO,
+        Seg::Last => egui::CornerRadius {
             ne: r,
             se: r,
             nw: 0,
@@ -547,7 +563,7 @@ fn toggle(
         // The seam, drawn by the cell added second so it lands on top of its
         // neighbour's edge, and tinted to stay legible whether it divides two
         // lit cells or a lit from an unlit one.
-        if seg == Seg::Right {
+        if seg != Seg::First {
             // An unlit cell being hovered draws a cyan border, and this seam is
             // part of that border. Painted after both cells, it would otherwise
             // overwrite the right cell's edge and leave its outline broken.

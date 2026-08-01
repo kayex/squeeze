@@ -19,6 +19,7 @@ struct Args {
     suffix: String,
     outdir: Option<PathBuf>,
     keep_fps: bool,
+    keep_resolution: bool,
     no_audio: bool,
 }
 
@@ -37,6 +38,7 @@ fn run() -> Result<()> {
         max_passes: args.passes,
         encoder: args.encoder,
         keep_fps: args.keep_fps,
+        keep_resolution: args.keep_resolution,
         include_audio: !args.no_audio,
         ..Default::default()
     };
@@ -129,6 +131,7 @@ fn parse_args() -> Result<Args> {
         suffix: "_discord".to_string(),
         outdir: None,
         keep_fps: false,
+        keep_resolution: false,
         no_audio: false,
     };
 
@@ -162,6 +165,7 @@ fn parse_args() -> Result<Args> {
             "--suffix" => args.suffix = next_val(&mut it, "--suffix")?,
             "-o" | "--outdir" => args.outdir = Some(PathBuf::from(next_val(&mut it, "--outdir")?)),
             "--keep-fps" => args.keep_fps = true,
+            "--keep-resolution" => args.keep_resolution = true,
             "--no-audio" => args.no_audio = true,
             s if s.starts_with('-') && s != "-" => bail!("unknown option '{s}' (try --help)"),
             _ => args.inputs.push(PathBuf::from(arg)),
@@ -196,6 +200,7 @@ OPTIONS:\n\
     --suffix <S>         Output filename suffix (default: _discord)\n\
     -o, --outdir <DIR>   Output directory (default: alongside each input)\n\
     --keep-fps           Don't cap 60fps -> 30fps when bits are tight\n\
+    --keep-resolution    Don't scale the frame down when bits are tight\n\
     --no-audio           Drop audio instead of stream-copying it\n\
     -h, --help           Show this help\n\
 \n\

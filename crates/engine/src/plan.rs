@@ -48,7 +48,7 @@ pub fn plan_initial(info: &MediaInfo, opts: &CompressOptions) -> EncodePlan {
 
     let video_bps = target_video_bps(info, opts, audio);
     let (fps_num, fps_den) = choose_fps(info, opts, video_bps);
-    let (width, height) = choose_resolution(info, video_bps);
+    let (width, height) = choose_resolution(info, opts, video_bps);
 
     EncodePlan {
         width,
@@ -79,7 +79,7 @@ impl EncodePlan {
         let new_bps = ((self.video_bitrate_bps as f64 * ratio).round() as i64).max(MIN_VIDEO_BPS);
 
         let (fps_num, fps_den) = choose_fps(info, opts, new_bps);
-        let (width, height) = choose_resolution(info, new_bps);
+        let (width, height) = choose_resolution(info, opts, new_bps);
 
         EncodePlan {
             width,
@@ -132,9 +132,9 @@ fn target_video_bps(info: &MediaInfo, opts: &CompressOptions, audio: AudioAction
 /// 2580x1080 and carry 35% more pixels than a 16:9 clip at the same rate, looking
 /// correspondingly worse. Capping total pixels treats both alike; for 16:9 the
 /// result is identical to a height cap.
-fn choose_resolution(info: &MediaInfo, video_bps: i64) -> (i32, i32) {
+fn choose_resolution(info: &MediaInfo, opts: &CompressOptions, video_bps: i64) -> (i32, i32) {
     // 16:9 reference frames: 1920x1080, 1280x720, 854x480.
-    let max_pixels: i64 = if video_bps >= 10_000_000 {
+    let max_pixels: i64 = if opts.keep_resolution || video_bps >= 10_000_000 {
         i64::MAX
     } else if video_bps >= 1_600_000 {
         1920 * 1080
