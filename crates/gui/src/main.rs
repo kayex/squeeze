@@ -94,7 +94,7 @@ struct App {
     updates: Receiver<Msg>,
     work: Sender<WorkItem>,
     budget: u64,
-    /// Don't let the encoder halve high frame rates to buy quality.
+    /// Don't let the encoder drop high frame rates to 30 to buy quality.
     keep_fps: bool,
     /// Don't let the encoder scale the frame down to buy quality.
     keep_resolution: bool,

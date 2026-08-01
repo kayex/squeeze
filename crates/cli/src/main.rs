@@ -199,7 +199,7 @@ OPTIONS:\n\
     --passes <N>         Max measure/re-encode passes (default: 3)\n\
     --suffix <S>         Output filename suffix (default: _discord)\n\
     -o, --outdir <DIR>   Output directory (default: alongside each input)\n\
-    --keep-fps           Don't cap 60fps -> 30fps when bits are tight\n\
+    --keep-fps           Don't drop >45fps to 30fps when bits are tight\n\
     --keep-resolution    Don't scale the frame down when bits are tight\n\
     --no-audio           Drop audio instead of stream-copying it\n\
     -h, --help           Show this help\n\

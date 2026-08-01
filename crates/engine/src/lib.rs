@@ -38,7 +38,8 @@ pub struct CompressOptions {
     /// Max encode passes before giving up (returns best-effort).
     pub max_passes: u32,
     pub encoder: Encoder,
-    /// Keep the source frame rate instead of capping 60→30 when bits are tight.
+    /// Keep the source frame rate instead of dropping it to 30 when bits are
+    /// tight.
     pub keep_fps: bool,
     /// Keep the source resolution instead of scaling down when bits are tight.
     pub keep_resolution: bool,

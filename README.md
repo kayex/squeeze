@@ -66,7 +66,7 @@ point fewer or smaller frames look better than blurry ones.
    The **Keep resolution** switch (or `--keep-resolution`) overrides this.
    Clips are never enlarged.
 
-4. **Frame rate**: anything above 45 fps is halved to 30 when the bitrate is
+4. **Frame rate**: anything above 45 fps drops to 30 when the bitrate is
    under ~3 Mbit/s, which is the usual case for clips longer than about
    20 seconds at 10 MB. The **Keep fps** switch (or `--keep-fps`) overrides
    this. Variable frame rate, which ShadowPlay records, is converted to
@@ -100,7 +100,7 @@ squeeze-cli.exe --max-mb 10 "C:\Videos\clip.mp4"
 | `--passes <N>` | Max re-encode attempts (default `3`) |
 | `--suffix <S>` | Output suffix (default `_discord`) |
 | `-o, --outdir <DIR>` | Output directory (default: next to the input) |
-| `--keep-fps` | Don't cap 60fps → 30fps when the budget is tight |
+| `--keep-fps` | Don't drop frame rates above 45 to 30 when the budget is tight |
 | `--keep-resolution` | Don't scale the frame down when the budget is tight |
 | `--no-audio` | Drop audio instead of copying it |
 

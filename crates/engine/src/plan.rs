@@ -159,8 +159,9 @@ fn choose_resolution(info: &MediaInfo, opts: &CompressOptions, video_bps: i64) -
     )
 }
 
-/// Always normalize to CFR. Cap 60→30 when bits are tight; otherwise keep the
-/// source nominal rate.
+/// Always normalize to CFR. Anything above 45 fps goes to a flat 30 when bits
+/// are tight, whatever it started at: 120 and 144 fps captures land on 30 too,
+/// not on 60 or 72. Otherwise the source nominal rate is kept.
 fn choose_fps(info: &MediaInfo, opts: &CompressOptions, video_bps: i64) -> (i32, i32) {
     let src_fps = info.fps();
     if !opts.keep_fps && src_fps > 45.0 && video_bps < 3_000_000 {
