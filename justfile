@@ -126,7 +126,10 @@ icon SOURCE OUT="assets/icon.ico":
     cp "$tmp/256.png" "$dir/icon-256.png"
     magick "$tmp/256.png" -resize 206x206 -background none -gravity center \
            -extent 256x256 PNG32:"$dir/icon-256-macos.png"
-    echo "wrote $out, $dir/icon-256.png and $dir/icon-256-macos.png"
+    # The GUI header draws this at ~30pt; egui has no mipmaps, so downscaling a
+    # 256px texture that far aliases badly. Ship it pre-scaled (96px covers 3x DPI).
+    magick "$tmp/256.png" -filter Lanczos -resize 96x96 PNG32:"$dir/icon-96.png"
+    echo "wrote $out, $dir/icon-256.png, $dir/icon-256-macos.png and $dir/icon-96.png"
     just _ico-info "$out"
 
 # Print the internal layout of an .ico (size, bytes, BMP vs PNG per entry).

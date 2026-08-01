@@ -92,20 +92,21 @@ impl App {
         theme::apply(&cc.egui_ctx);
 
         // Reuse eframe's PNG decoder for the header mark rather than pulling in
-        // an image crate of our own.
-        let logo =
-            eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/icon-256.png"))
-                .ok()
-                .map(|img| {
-                    cc.egui_ctx.load_texture(
-                        "logo",
-                        egui::ColorImage::from_rgba_unmultiplied(
-                            [img.width as usize, img.height as usize],
-                            &img.rgba,
-                        ),
-                        egui::TextureOptions::LINEAR,
-                    )
-                });
+        // an image crate of our own. This is the 96px asset, not the 256px one:
+        // egui generates no mipmaps, so shrinking a 256px texture into a ~30pt
+        // slot aliases badly.
+        let logo = eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/icon-96.png"))
+            .ok()
+            .map(|img| {
+                cc.egui_ctx.load_texture(
+                    "logo",
+                    egui::ColorImage::from_rgba_unmultiplied(
+                        [img.width as usize, img.height as usize],
+                        &img.rgba,
+                    ),
+                    egui::TextureOptions::LINEAR,
+                )
+            });
 
         let (work_tx, work_rx) = channel::<WorkItem>();
         let (msg_tx, msg_rx) = channel::<Msg>();
@@ -286,14 +287,22 @@ impl eframe::App for App {
                     ui.label(egui::RichText::new("Fit under").color(theme::TEXT_DIM));
                 });
             });
-            ui.add_space(2.0);
-            ui.checkbox(&mut self.keep_fps, "Keep original frame rate")
-                .on_hover_text(
-                    "By default 60 fps clips drop to 30 when there aren't enough \
-                     bits to go round, which usually looks better. Tick this to \
-                     keep the frame rate and accept softer frames.\n\n\
-                     Applies to clips added from now on.",
-                );
+            // Keep every control in the same right-hand column rather than
+            // stranding this one under the title.
+            // The horizontal wrapper matters: with_layout on its own claims all
+            // the remaining vertical space and starves everything below it.
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.checkbox(&mut self.keep_fps, "Keep original frame rate")
+                        .on_hover_text(
+                            "By default 60 fps clips drop to 30 when there aren't enough \
+                             bits to go round, which usually looks better. Tick this to \
+                             keep the frame rate and accept softer frames.\n\n\
+                             Applies to clips added from now on.",
+                        );
+                });
+            });
             ui.add_space(10.0);
 
             drop_zone(ui, hovering);
