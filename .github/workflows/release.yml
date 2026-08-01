@@ -1,0 +1,102 @@
+name: release
+
+# Cut a release by pushing a version tag:  just release 0.1.0
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    uses: ./.github/workflows/windows-build.yml
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+      id-token: write # sign the provenance attestation
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: squeeze-windows-x64
+          path: dist
+
+      - name: Package
+        id: pkg
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          zip_name="squeeze-${version}-windows-x64.zip"
+          echo "zip=$zip_name" >> "$GITHUB_OUTPUT"
+
+          cp packaging/README.txt dist/README.txt
+          mkdir -p out
+          (cd dist && zip -q -r "../out/${zip_name}" .)
+          cp dist/squeeze.exe dist/squeeze-gui.exe out/
+
+          # Note the explicit file list: `sha256sum *` would race with its own
+          # redirect target and hash an empty SHA256SUMS.txt.
+          (cd out && sha256sum "$zip_name" squeeze.exe squeeze-gui.exe > SHA256SUMS.txt)
+          cat out/SHA256SUMS.txt
+
+      # Ties these exact binaries to this public workflow run, so anyone can
+      # verify provenance with: gh attestation verify <file> -R kayex/squeeze2
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            out/squeeze.exe
+            out/squeeze-gui.exe
+            out/${{ steps.pkg.outputs.zip }}
+
+      - name: Compose release notes
+        run: |
+          set -euo pipefail
+          {
+            echo "### Download"
+            echo
+            echo "**Just want the app?** Grab \`squeeze-gui.exe\` — it is self-contained, nothing to install."
+            echo "The \`.zip\` additionally contains the CLI, the licence and a README."
+            echo
+            echo "Needs Windows 10/11 (x64). Uses your NVIDIA GPU (NVENC) when available —"
+            echo "driver 570 or newer — and falls back to software encoding otherwise."
+            echo
+            echo "### Windows will warn you"
+            echo
+            echo "This build is **not code-signed**, so SmartScreen shows *\"Windows protected your PC\"*"
+            echo "with an unknown publisher. Click **More info → Run anyway**."
+            echo "Signing costs money to maintain; this is a free hobby project. Verify the download instead:"
+            echo
+            echo '```'
+            echo "# checksum"
+            echo "certutil -hashfile squeeze-gui.exe SHA256"
+            echo
+            echo "# provenance — proves it was built by this repo's public workflow"
+            echo "gh attestation verify squeeze-gui.exe -R ${GITHUB_REPOSITORY}"
+            echo '```'
+            echo
+            echo "### SHA-256"
+            echo
+            echo '```'
+            cat out/SHA256SUMS.txt
+            echo '```'
+          } > notes.md
+          cat notes.md
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: squeeze ${{ steps.pkg.outputs.version }}
+          body_path: notes.md
+          # Created as a draft so the notes and assets can be eyeballed before
+          # anything is public. Flip to false to publish automatically on tag.
+          draft: true
+          files: |
+            out/${{ steps.pkg.outputs.zip }}
+            out/squeeze-gui.exe
+            out/squeeze.exe
+            out/SHA256SUMS.txt

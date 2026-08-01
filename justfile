@@ -138,6 +138,23 @@ clippy:
 clean:
     cargo clean
 
+# Tag a release and push it — CI then builds and drafts the GitHub release.
+#   just release 0.1.0
+release VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    v="{{VERSION}}"
+    [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || { echo "version should look like 1.2.3, got '$v'" >&2; exit 1; }
+    [ -z "$(git status --porcelain)" ] || { echo "working tree is dirty — commit first" >&2; exit 1; }
+    # Keep the tag and the crate versions in step; FileVersion comes from Cargo.
+    for f in crates/cli/Cargo.toml crates/gui/Cargo.toml; do
+        have=$(grep -m1 '^version = ' "$f" | cut -d'"' -f2)
+        [ "$have" = "$v" ] || { echo "$f says version $have, tagging $v — bump it first" >&2; exit 1; }
+    done
+    git tag -a "v$v" -m "squeeze v$v"
+    git push origin "v$v"
+    echo "pushed tag v$v — watch: gh run watch \$(gh run list --workflow release.yml --limit 1 --json databaseId -q '.[0].databaseId')"
+
 # --- CI (Windows .exe builds on GitHub Actions) ---
 
 # Trigger the Windows build workflow
