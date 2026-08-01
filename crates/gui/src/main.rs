@@ -812,14 +812,12 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                         color: theme::WARN,
                         ..Default::default()
                     };
-                    // A tinted chip, the way a doc would set `code`. Mono alone
-                    // is too quiet here: it reads as a font glitch rather than
-                    // as the name of something on screen.
+                    // Same face as the prose around it, lifted off the card by
+                    // its background alone, so the switch reads as a named
+                    // thing without a font change interrupting the sentence.
                     let chip = egui::TextFormat {
-                        font_id: egui::FontId::monospace(size * 0.94),
-                        color: theme::WARN,
-                        background: theme::mix(theme::WARN, theme::SURFACE, 0.82),
-                        ..Default::default()
+                        background: theme::SURFACE_HI,
+                        ..prose.clone()
                     };
                     let mut job = egui::text::LayoutJob {
                         wrap: egui::text::TextWrapping {
