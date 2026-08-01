@@ -58,7 +58,10 @@ fn run() -> Result<()> {
 fn process_one(input: &Path, args: &Args, opts: &CompressOptions) -> Result<()> {
     let output = output_path(input, &args.suffix, args.outdir.as_deref());
     if output == input {
-        bail!("refusing to overwrite the source file ({})", input.display());
+        bail!(
+            "refusing to overwrite the source file ({})",
+            input.display()
+        );
     }
 
     let source_bytes = std::fs::metadata(input)

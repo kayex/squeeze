@@ -7,6 +7,8 @@
 // Release builds are a GUI app — don't pop a console window on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod theme;
+
 use eframe::egui;
 use engine::{compress_to_target, CompressOptions};
 use std::path::{Path, PathBuf};
@@ -81,6 +83,7 @@ struct App {
     budget: u64,
     /// Don't let the encoder halve high frame rates to buy quality.
     keep_fps: bool,
+    logo: Option<egui::TextureHandle>,
 }
 
 impl App {
@@ -93,6 +96,23 @@ impl App {
             family.push("Hack".to_owned());
         }
         cc.egui_ctx.set_fonts(fonts);
+        theme::apply(&cc.egui_ctx);
+
+        // Reuse eframe's PNG decoder for the header mark rather than pulling in
+        // an image crate of our own.
+        let logo =
+            eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/icon-256.png"))
+                .ok()
+                .map(|img| {
+                    cc.egui_ctx.load_texture(
+                        "logo",
+                        egui::ColorImage::from_rgba_unmultiplied(
+                            [img.width as usize, img.height as usize],
+                            &img.rgba,
+                        ),
+                        egui::TextureOptions::LINEAR,
+                    )
+                });
 
         let (work_tx, work_rx) = channel::<WorkItem>();
         let (msg_tx, msg_rx) = channel::<Msg>();
@@ -147,7 +167,10 @@ impl App {
                     },
                     Err(e) => Status::Failed(format!("{e:#}")),
                 };
-                let _ = msg_tx.send(Msg { id: item.id, status });
+                let _ = msg_tx.send(Msg {
+                    id: item.id,
+                    status,
+                });
                 ctx.request_repaint();
             }
         });
@@ -158,6 +181,7 @@ impl App {
             work: work_tx,
             budget: BUDGETS[0].1,
             keep_fps: false,
+            logo,
         };
 
         // Files can also arrive as arguments — dropping them on the .exe icon in
@@ -245,30 +269,39 @@ impl eframe::App for App {
         egui::Frame::central_panel(ui.style()).show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             ui.horizontal(|ui| {
+                if let Some(logo) = &self.logo {
+                    ui.add(egui::Image::new(logo).fit_to_exact_size(egui::vec2(30.0, 30.0)));
+                    ui.add_space(2.0);
+                }
                 ui.heading("squeeze");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     for (label, bytes) in BUDGETS.iter().rev() {
+                        let selected = self.budget == *bytes;
+                        let text = if selected {
+                            egui::RichText::new(*label).color(theme::CYAN)
+                        } else {
+                            egui::RichText::new(*label).color(theme::TEXT_DIM)
+                        };
                         if ui
-                            .selectable_label(self.budget == *bytes, *label)
+                            .selectable_label(selected, text)
                             .on_hover_text("Target upload limit")
                             .clicked()
                         {
                             self.budget = *bytes;
                         }
                     }
-                    ui.label("Fit under:");
+                    ui.label(egui::RichText::new("Fit under").color(theme::TEXT_DIM));
                 });
             });
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut self.keep_fps, "Keep original frame rate")
-                    .on_hover_text(
-                        "By default 60 fps clips drop to 30 when there aren't enough \
-                         bits to go round, which usually looks better. Tick this to \
-                         keep the frame rate and accept softer frames.\n\n\
-                         Applies to clips added from now on.",
-                    );
-            });
-            ui.add_space(8.0);
+            ui.add_space(2.0);
+            ui.checkbox(&mut self.keep_fps, "Keep original frame rate")
+                .on_hover_text(
+                    "By default 60 fps clips drop to 30 when there aren't enough \
+                     bits to go round, which usually looks better. Tick this to \
+                     keep the frame rate and accept softer frames.\n\n\
+                     Applies to clips added from now on.",
+                );
+            ui.add_space(10.0);
 
             drop_zone(ui, hovering);
             ui.add_space(8.0);
@@ -287,35 +320,35 @@ impl eframe::App for App {
 }
 
 fn drop_zone(ui: &mut egui::Ui, hovering: bool) {
-    let visuals = ui.visuals();
     let (stroke, fill) = if hovering {
         (
-            egui::Stroke::new(2.0, visuals.selection.stroke.color),
-            visuals.selection.bg_fill.linear_multiply(0.25),
+            egui::Stroke::new(1.5, theme::CYAN),
+            theme::CYAN.gamma_multiply(0.10),
         )
     } else {
-        (
-            egui::Stroke::new(1.0, visuals.weak_text_color()),
-            egui::Color32::TRANSPARENT,
-        )
+        (egui::Stroke::new(1.0, theme::BORDER), theme::SURFACE)
     };
 
     egui::Frame::default()
         .stroke(stroke)
         .fill(fill)
-        .corner_radius(8.0)
-        .inner_margin(18.0)
+        .corner_radius(10.0)
+        .inner_margin(22.0)
         .show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.label(if hovering {
-                    "Release to add"
-                } else {
-                    "Drop video files here"
-                });
+                ui.label(
+                    egui::RichText::new(if hovering {
+                        "Release to add"
+                    } else {
+                        "Drop video files here"
+                    })
+                    .color(if hovering { theme::CYAN } else { theme::TEXT }),
+                );
+                ui.add_space(2.0);
                 ui.label(
                     egui::RichText::new("saved next to the original as _discord.mp4")
                         .small()
-                        .weak(),
+                        .color(theme::TEXT_DIM),
                 );
             });
             ui.set_min_width(ui.available_width());
@@ -329,78 +362,96 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
 
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(name).strong());
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            match &job.status {
-                Status::Done { bytes, fits, .. } => {
-                    let text = format!("{} → {}", mb(job.source_bytes), mb(*bytes));
-                    if *fits {
-                        ui.label(egui::RichText::new(format!("{text}  ✔")).color(
-                            egui::Color32::from_rgb(0x4c, 0xaf, 0x50),
-                        ));
+    egui::Frame::default()
+        .fill(theme::SURFACE)
+        .stroke(egui::Stroke::new(1.0, theme::BORDER))
+        .corner_radius(10.0)
+        .inner_margin(egui::Margin::symmetric(14, 11))
+        .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(name).strong());
+                ui.with_layout(
+                    egui::Layout::right_to_left(egui::Align::Center),
+                    |ui| match &job.status {
+                        Status::Done { bytes, fits, .. } => {
+                            let sizes = format!("{} → {}", mb(job.source_bytes), mb(*bytes));
+                            if *fits {
+                                ui.label(
+                                    egui::RichText::new(format!("{sizes}  ✔")).color(theme::OK),
+                                );
+                            } else {
+                                ui.label(
+                                    egui::RichText::new(format!("{sizes}  over limit"))
+                                        .color(theme::WARN),
+                                );
+                            }
+                        }
+                        Status::Failed(_) => {
+                            ui.label(egui::RichText::new("failed").color(theme::ERR));
+                        }
+                        _ => {
+                            ui.label(
+                                egui::RichText::new(mb(job.source_bytes)).color(theme::TEXT_DIM),
+                            );
+                        }
+                    },
+                );
+            });
+
+            // What the clip is and what it's becoming, so a dropped resolution or
+            // a halved frame rate is visible rather than a surprise in the output.
+            let shape = match &job.status {
+                Status::Running { out, .. } | Status::Done { out, .. } => match job.source {
+                    Some(src) if src != *out => format!("{src}  →  {out}"),
+                    _ => out.to_string(),
+                },
+                _ => job.source.map(|s| s.to_string()).unwrap_or_default(),
+            };
+            let note = match &job.status {
+                Status::Queued => "waiting".to_string(),
+                Status::Running {
+                    pass,
+                    max_passes,
+                    encoder,
+                    ..
+                } => {
+                    if *pass > 1 {
+                        format!("{encoder} · pass {pass}/{max_passes}")
                     } else {
-                        ui.label(
-                            egui::RichText::new(format!("{text}  over limit"))
-                                .color(egui::Color32::from_rgb(0xe5, 0x8b, 0x2c)),
-                        );
+                        encoder.clone()
                     }
                 }
-                Status::Failed(_) => {
-                    ui.label(egui::RichText::new("failed").color(egui::Color32::from_rgb(
-                        0xe5, 0x4b, 0x4b,
-                    )));
+                _ => String::new(),
+            };
+            let detail = [shape, note]
+                .iter()
+                .filter(|s| !s.is_empty())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("   ·   ");
+            if !detail.is_empty() {
+                ui.add_space(2.0);
+                ui.label(egui::RichText::new(detail).small().color(theme::TEXT_DIM));
+            }
+
+            match &job.status {
+                Status::Queued => {
+                    ui.add_space(6.0);
+                    theme::gradient_bar(ui, 0.0);
                 }
-                _ => {
-                    ui.label(egui::RichText::new(mb(job.source_bytes)).weak());
+                Status::Running { fraction, .. } => {
+                    ui.add_space(6.0);
+                    theme::gradient_bar(ui, *fraction);
+                }
+                Status::Done { .. } => {}
+                Status::Failed(err) => {
+                    ui.add_space(2.0);
+                    ui.label(egui::RichText::new(err).small().color(theme::ERR));
                 }
             }
         });
-    });
-
-    // What the clip is, and what it's becoming — so a dropped resolution or a
-    // halved frame rate is visible rather than a surprise in the output file.
-    let detail = match &job.status {
-        Status::Running { out, .. } | Status::Done { out, .. } => match job.source {
-            Some(src) if src != *out => format!("{src}  →  {out}"),
-            _ => out.to_string(),
-        },
-        _ => match job.source {
-            Some(src) => src.to_string(),
-            None => String::new(),
-        },
-    };
-    if !detail.is_empty() {
-        ui.label(egui::RichText::new(detail).small().weak());
-    }
-
-    match &job.status {
-        Status::Queued => {
-            ui.add(egui::ProgressBar::new(0.0).text("queued"));
-        }
-        Status::Running {
-            pass,
-            max_passes,
-            fraction,
-            encoder,
-            ..
-        } => {
-            let label = if *pass > 1 {
-                format!("pass {pass}/{max_passes} · {encoder}")
-            } else {
-                encoder.clone()
-            };
-            ui.add(egui::ProgressBar::new(*fraction).text(label));
-        }
-        Status::Done { .. } => {}
-        Status::Failed(err) => {
-            ui.label(
-                egui::RichText::new(err)
-                    .small()
-                    .color(ui.visuals().weak_text_color()),
-            );
-        }
-    }
 }
 
 /// `clip.mp4` -> `clip_discord.mp4`, alongside the source.
@@ -430,7 +481,8 @@ fn main() -> eframe::Result<()> {
 
     // The icon embedded in the .exe covers Explorer, but winit doesn't reuse it
     // for the title bar / Alt-Tab — that needs setting here as well.
-    if let Ok(icon) = eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/icon-256.png"))
+    if let Ok(icon) =
+        eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/icon-256.png"))
     {
         viewport = viewport.with_icon(icon);
     }

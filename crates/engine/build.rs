@@ -23,17 +23,9 @@ fn main() {
         "crypt32",  // cert store
         "advapi32", // registry / legacy crypto
         "ws2_32",   // sockets
-        "user32",
-        "gdi32",
-        "ole32",
-        "oleaut32",
-        "shlwapi",
-        "strmiids", // DirectShow GUIDs
-        "uuid",
-        "mfplat",   // Media Foundation (some FFmpeg paths reference it)
-        "mfuuid",
-        "vfw32",
-        "psapi",
+        "user32", "gdi32", "ole32", "oleaut32", "shlwapi", "strmiids", // DirectShow GUIDs
+        "uuid", "mfplat", // Media Foundation (some FFmpeg paths reference it)
+        "mfuuid", "vfw32", "psapi",
     ];
     for lib in SYS_LIBS {
         println!("cargo:rustc-link-lib=dylib={lib}");

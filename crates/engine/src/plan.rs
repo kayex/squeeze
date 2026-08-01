@@ -64,16 +64,19 @@ impl EncodePlan {
     /// Produce a tighter plan after an overshoot. Scales video bitrate by the
     /// measured overshoot ratio (accounting for the fixed audio bytes), and may
     /// step resolution/fps down further if the new bitrate is low.
-    pub fn shrink(&self, actual_bytes: u64, info: &MediaInfo, opts: &CompressOptions) -> EncodePlan {
+    pub fn shrink(
+        &self,
+        actual_bytes: u64,
+        info: &MediaInfo,
+        opts: &CompressOptions,
+    ) -> EncodePlan {
         let audio_bytes = audio_bytes(info, self.audio);
-        let target_video_bytes =
-            (opts.max_bytes as f64 * opts.margin - audio_bytes).max(1.0);
+        let target_video_bytes = (opts.max_bytes as f64 * opts.margin - audio_bytes).max(1.0);
         let actual_video_bytes = (actual_bytes as f64 - audio_bytes).max(1.0);
 
         // Always reduce by at least a little, even if the estimate says we're close.
         let ratio = (target_video_bytes / actual_video_bytes).min(0.97);
-        let new_bps =
-            ((self.video_bitrate_bps as f64 * ratio).round() as i64).max(MIN_VIDEO_BPS);
+        let new_bps = ((self.video_bitrate_bps as f64 * ratio).round() as i64).max(MIN_VIDEO_BPS);
 
         let (fps_num, fps_den) = choose_fps(info, opts, new_bps);
         let (width, height) = choose_resolution(info, new_bps);

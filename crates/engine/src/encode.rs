@@ -210,7 +210,8 @@ pub fn transcode(
 
     // ---- write header with faststart, then cache muxer-assigned time bases ----
     let mut header_opts = Some(AVDictionary::new(c"movflags", c"+faststart", 0));
-    ofmt.write_header(&mut header_opts).context("write header")?;
+    ofmt.write_header(&mut header_opts)
+        .context("write header")?;
     let audio_out_tb = audio_out.map(|i| ofmt.streams()[i].time_base);
 
     // ---- main packet loop ----
@@ -223,7 +224,9 @@ pub fn transcode(
                     packet.pts as f64 * video_in_tb.num as f64 / video_in_tb.den.max(1) as f64;
                 on_progress((secs / info.duration_s).clamp(0.0, 1.0) as f32);
             }
-            dec_ctx.send_packet(Some(&packet)).context("decode submit")?;
+            dec_ctx
+                .send_packet(Some(&packet))
+                .context("decode submit")?;
             loop {
                 let mut frame = match dec_ctx.receive_frame() {
                     Ok(f) => f,
@@ -403,7 +406,9 @@ fn encode_write(
             f.set_pts(av_rescale_q(f.pts, f.time_base, enc_ctx.time_base));
         }
     }
-    enc_ctx.send_frame(frame.as_ref()).context("encode submit")?;
+    enc_ctx
+        .send_frame(frame.as_ref())
+        .context("encode submit")?;
     loop {
         let mut pkt = match enc_ctx.receive_packet() {
             Ok(p) => p,
