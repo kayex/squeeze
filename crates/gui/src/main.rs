@@ -88,14 +88,7 @@ struct App {
 
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // egui's proportional stack is Ubuntu-Light + the two emoji fonts, none
-        // of which have arrows (U+2192) — they render as tofu. Hack does, so add
-        // it as a last-resort fallback.
-        let mut fonts = egui::FontDefinitions::default();
-        if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
-            family.push("Hack".to_owned());
-        }
-        cc.egui_ctx.set_fonts(fonts);
+        theme::install_fonts(&cc.egui_ctx);
         theme::apply(&cc.egui_ctx);
 
         // Reuse eframe's PNG decoder for the header mark rather than pulling in
@@ -379,11 +372,14 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                             let sizes = format!("{} → {}", mb(job.source_bytes), mb(*bytes));
                             if *fits {
                                 ui.label(
-                                    egui::RichText::new(format!("{sizes}  ✔")).color(theme::OK),
+                                    egui::RichText::new(format!("{sizes}  ✔"))
+                                        .monospace()
+                                        .color(theme::OK),
                                 );
                             } else {
                                 ui.label(
                                     egui::RichText::new(format!("{sizes}  over limit"))
+                                        .monospace()
                                         .color(theme::WARN),
                                 );
                             }
@@ -393,7 +389,9 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                         }
                         _ => {
                             ui.label(
-                                egui::RichText::new(mb(job.source_bytes)).color(theme::TEXT_DIM),
+                                egui::RichText::new(mb(job.source_bytes))
+                                    .monospace()
+                                    .color(theme::TEXT_DIM),
                             );
                         }
                     },
@@ -404,7 +402,7 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
             // a halved frame rate is visible rather than a surprise in the output.
             let shape = match &job.status {
                 Status::Running { out, .. } | Status::Done { out, .. } => match job.source {
-                    Some(src) if src != *out => format!("{src}  →  {out}"),
+                    Some(src) if src != *out => format!("{src} → {out}"),
                     _ => out.to_string(),
                 },
                 _ => job.source.map(|s| s.to_string()).unwrap_or_default(),
@@ -430,10 +428,15 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                 .filter(|s| !s.is_empty())
                 .cloned()
                 .collect::<Vec<_>>()
-                .join("   ·   ");
+                .join("  ·  ");
             if !detail.is_empty() {
                 ui.add_space(2.0);
-                ui.label(egui::RichText::new(detail).small().color(theme::TEXT_DIM));
+                ui.label(
+                    egui::RichText::new(detail)
+                        .monospace()
+                        .size(11.5)
+                        .color(theme::TEXT_DIM),
+                );
             }
 
             match &job.status {
@@ -481,9 +484,16 @@ fn main() -> eframe::Result<()> {
 
     // The icon embedded in the .exe covers Explorer, but winit doesn't reuse it
     // for the title bar / Alt-Tab — that needs setting here as well.
-    if let Ok(icon) =
-        eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/icon-256.png"))
-    {
+    //
+    // macOS gets the padded variant: the Dock expects artwork within a ~80% safe
+    // area, so a full-bleed icon sits noticeably larger than every other app.
+    // Windows wants full-bleed.
+    #[cfg(target_os = "macos")]
+    let icon_png: &[u8] = include_bytes!("../../../assets/icon-256-macos.png");
+    #[cfg(not(target_os = "macos"))]
+    let icon_png: &[u8] = include_bytes!("../../../assets/icon-256.png");
+
+    if let Ok(icon) = eframe::icon_data::from_png_bytes(icon_png) {
         viewport = viewport.with_icon(icon);
     }
 

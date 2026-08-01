@@ -24,6 +24,55 @@ pub const OK: Color32 = Color32::from_rgb(0x3D, 0xD6, 0x8C);
 pub const WARN: Color32 = Color32::from_rgb(0xE5, 0x9B, 0x3C);
 pub const ERR: Color32 = Color32::from_rgb(0xF2, 0x5F, 0x5F);
 
+/// Bundled type. The UI face carries the interface text; the mono face carries
+/// anything technical (resolutions, frame rates, sizes) so digits stay aligned
+/// and don't jitter as values update.
+///
+/// egui's stock Ubuntu-Light is a *light* weight and renders thin on macOS,
+/// which is why it's replaced rather than merely supplemented.
+pub fn install_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    // `SQUEEZE_FONT=inter` switches pairing while comparing looks.
+    let inter = std::env::var("SQUEEZE_FONT").as_deref() == Ok("inter");
+    let (ui_name, ui_bytes, mono_name, mono_bytes): (_, &[u8], _, &[u8]) = if inter {
+        (
+            "Inter",
+            include_bytes!("../../../assets/fonts/Inter-Regular.ttf"),
+            "JetBrainsMono",
+            include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf"),
+        )
+    } else {
+        (
+            "IBMPlexSans",
+            include_bytes!("../../../assets/fonts/IBMPlexSans-Regular.ttf"),
+            "IBMPlexMono",
+            include_bytes!("../../../assets/fonts/IBMPlexMono-Regular.ttf"),
+        )
+    };
+
+    fonts.font_data.insert(
+        ui_name.to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(ui_bytes)),
+    );
+    fonts.font_data.insert(
+        mono_name.to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(mono_bytes)),
+    );
+
+    // Put ours first, then keep egui's stock faces as fallbacks so emoji and
+    // stray symbols (the → in the shape summary) still resolve.
+    if let Some(f) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+        f.insert(0, ui_name.to_owned());
+        f.push("Hack".to_owned());
+    }
+    if let Some(f) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+        f.insert(0, mono_name.to_owned());
+    }
+
+    ctx.set_fonts(fonts);
+}
+
 pub fn apply(ctx: &egui::Context) {
     // Pin the app to its own dark palette regardless of the OS preference, and
     // write it into both style slots so a theme switch can't undo it.

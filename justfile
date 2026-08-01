@@ -118,9 +118,15 @@ icon SOURCE OUT="assets/icon.ico":
     icotool -c -o "$out" \
         "$tmp/16.png" "$tmp/24.png" "$tmp/32.png" "$tmp/48.png" "$tmp/64.png" "$tmp/128.png" \
         --raw="$tmp/256.png"
-    # eframe needs a plain PNG for the window/Alt-Tab icon.
-    cp "$tmp/256.png" "$(dirname "$out")/icon-256.png"
-    echo "wrote $out and $(dirname "$out")/icon-256.png"
+    # eframe needs a plain PNG for the window/Alt-Tab icon. Full-bleed suits
+    # Windows; macOS expects the artwork inside a ~80% safe area with transparent
+    # padding (Apple's grid is an 824px squircle on a 1024px canvas), otherwise
+    # the Dock renders it noticeably larger than every other app.
+    dir="$(dirname "$out")"
+    cp "$tmp/256.png" "$dir/icon-256.png"
+    magick "$tmp/256.png" -resize 206x206 -background none -gravity center \
+           -extent 256x256 PNG32:"$dir/icon-256-macos.png"
+    echo "wrote $out, $dir/icon-256.png and $dir/icon-256-macos.png"
     just _ico-info "$out"
 
 # Print the internal layout of an .ico (size, bytes, BMP vs PNG per entry).
