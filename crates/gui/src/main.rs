@@ -325,13 +325,22 @@ fn mb(bytes: u64) -> String {
 }
 
 fn main() -> eframe::Result<()> {
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([560.0, 460.0])
+        .with_min_inner_size([420.0, 320.0])
+        // Required for file drops on Windows.
+        .with_drag_and_drop(true)
+        .with_title("squeeze");
+
+    // The icon embedded in the .exe covers Explorer, but winit doesn't reuse it
+    // for the title bar / Alt-Tab — that needs setting here as well.
+    if let Ok(icon) = eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/icon-256.png"))
+    {
+        viewport = viewport.with_icon(icon);
+    }
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([560.0, 460.0])
-            .with_min_inner_size([420.0, 320.0])
-            // Required for file drops on Windows.
-            .with_drag_and_drop(true)
-            .with_title("squeeze"),
+        viewport,
         ..Default::default()
     };
     eframe::run_native(

@@ -5,6 +5,23 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 description = "Drag-and-drop desktop UI for squeeze2."
+build = "build.rs"
+
+[build-dependencies]
+# Embeds the .ico + VERSIONINFO into the PE. Only used on Windows targets.
+winresource = "0.1"
+
+# Windows shows these in Properties → Details and Task Manager. Without this
+# block the fields default to the *crate* name, so the app would show as "gui".
+# (None of it affects the SmartScreen publisher — that comes from a signature.)
+[package.metadata.winresource]
+ProductName = "squeeze"
+FileDescription = "squeeze — shrink ShadowPlay clips for Discord"
+OriginalFilename = "squeeze-gui.exe"
+InternalName = "squeeze-gui"
+CompanyName = "Johan Vester"
+LegalCopyright = "Copyright © 2026 Johan Vester. MIT licensed."
+Comments = "https://github.com/kayex/squeeze2"
 
 [[bin]]
 name = "squeeze-gui"
