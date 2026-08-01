@@ -77,8 +77,7 @@ point fewer or smaller frames look better than blurry ones.
    (or `--no-audio`) drops the track and spends its share on video.
 
 6. **Size check**: the finished file is measured, and if it came out over the
-   limit it is encoded again at a lower bitrate, up to three attempts. This is
-   why the result reliably fits rather than approximately fits.
+   limit it is encoded again at a lower bitrate, up to three attempts.
 
 Squeeze shows the resolution and frame rate settled on for each clip, so a
 clip that was scaled down is visible at a glance. A 30-second 1440p60 clip aimed
