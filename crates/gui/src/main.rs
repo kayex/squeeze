@@ -812,11 +812,12 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                         color: theme::WARN,
                         ..Default::default()
                     };
-                    // Same face as the prose around it, lifted off the card by
-                    // its background alone, so the switch reads as a named
-                    // thing without a font change interrupting the sentence.
+                    // The lit switch in miniature: same fill and same text
+                    // colour it carries when on, so the eye ties the sentence
+                    // straight back to the control above.
                     let chip = egui::TextFormat {
-                        background: theme::SURFACE_HI,
+                        color: theme::BG,
+                        background: theme::CYAN,
                         ..prose.clone()
                     };
                     let mut job = egui::text::LayoutJob {
