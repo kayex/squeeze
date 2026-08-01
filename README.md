@@ -67,12 +67,13 @@ point fewer or smaller frames look better than blurry ones.
 
 4. **Frame rate**: anything above 45 fps is halved to 30 when the bitrate is
    under ~3 Mbit/s, which is the usual case for clips longer than about
-   20 seconds at 10 MB. **Keep original frame rate** in the window (or
-   `--keep-fps`) overrides this. Variable frame rate, which ShadowPlay records,
+   20 seconds at 10 MB. **Keep 60 fps** in the window (or `--keep-fps`)
+   overrides this. Variable frame rate, which ShadowPlay records,
    is converted to constant.
 
 5. **Encoding**: H.264, with the original audio track copied across rather than
-   re-compressed. This runs on the GPU where possible.
+   re-compressed. This runs on the GPU where possible. **No audio** in the
+   window (or `--no-audio`) drops the track and spends its share on video.
 
 6. **Size check**: the finished file is measured, and if it came out over the
    limit it is encoded again at a lower bitrate, up to three attempts. This is

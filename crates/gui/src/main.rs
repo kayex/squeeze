@@ -73,6 +73,7 @@ struct WorkItem {
     path: PathBuf,
     max_bytes: u64,
     keep_fps: bool,
+    no_audio: bool,
 }
 
 struct Msg {
@@ -87,6 +88,8 @@ struct App {
     budget: u64,
     /// Don't let the encoder halve high frame rates to buy quality.
     keep_fps: bool,
+    /// Drop the audio track, spending its share of the budget on video.
+    no_audio: bool,
     logo: Option<egui::TextureHandle>,
 }
 
@@ -123,6 +126,7 @@ impl App {
                 let opts = CompressOptions {
                     max_bytes: item.max_bytes,
                     keep_fps: item.keep_fps,
+                    include_audio: !item.no_audio,
                     ..Default::default()
                 };
                 let output = output_path(&item.path);
@@ -179,6 +183,7 @@ impl App {
             work: work_tx,
             budget: BUDGETS[0].2,
             keep_fps: false,
+            no_audio: false,
             logo,
         };
 
@@ -229,6 +234,7 @@ impl App {
                 path,
                 max_bytes: self.budget,
                 keep_fps: self.keep_fps,
+                no_audio: self.no_audio,
             });
         }
     }
@@ -273,36 +279,33 @@ impl eframe::App for App {
                     ui.add_space(2.0);
                 }
                 ui.heading("squeeze");
-            });
 
-            // Controls read as a plain top-to-bottom form: a label saying what
-            // is being asked, then the answers. Each limit lives inside its own
-            // button, so there is no separate readout to collide with the text
-            // beside it.
-            ui.add_space(14.0);
-            ui.label(
-                egui::RichText::new("Your Discord plan")
-                    .small()
-                    .color(theme::TEXT_DIM),
-            );
-            ui.add_space(5.0);
-            ui.horizontal(|ui| {
-                for (tier, size, bytes) in BUDGETS {
-                    if tier_button(ui, tier, size, self.budget == *bytes).clicked() {
-                        self.budget = *bytes;
+                // Plans sit opposite the title. One is always lit, so the group
+                // reads as a choice without needing a label or button chrome.
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    for (tier, size, bytes) in BUDGETS.iter().rev() {
+                        if plan_option(ui, tier, size, self.budget == *bytes).clicked() {
+                            self.budget = *bytes;
+                        }
                     }
-                    ui.add_space(2.0);
-                }
+                });
             });
 
+            // Switches, styled like the plans and lit when on. A row rather than
+            // a stack of checkboxes, so more can be added without it becoming a
+            // list. Rightmost is added first in a right-to-left layout.
+            ui.add_space(2.0);
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if toggle(ui, "No audio", self.no_audio).clicked() {
+                        self.no_audio = !self.no_audio;
+                    }
+                    if toggle(ui, "Keep 60 fps", self.keep_fps).clicked() {
+                        self.keep_fps = !self.keep_fps;
+                    }
+                });
+            });
             ui.add_space(12.0);
-            ui.checkbox(&mut self.keep_fps, "Keep original frame rate");
-            ui.label(
-                egui::RichText::new("Otherwise 60 fps drops to 30 when space is tight")
-                    .small()
-                    .color(theme::TEXT_DIM),
-            );
-            ui.add_space(14.0);
 
             drop_zone(ui, hovering);
             ui.add_space(8.0);
@@ -320,13 +323,13 @@ impl eframe::App for App {
     }
 }
 
-/// A plan button: the tier on top, the limit it buys underneath. Keeping the two
-/// together means the choice explains itself, with nothing to read across.
-fn tier_button(ui: &mut egui::Ui, tier: &str, size: &str, selected: bool) -> egui::Response {
+/// A plan: name on top, the limit it allows underneath. Sized to its own content
+/// so "Free" doesn't carry the padding "Nitro Basic" needs.
+fn plan_option(ui: &mut egui::Ui, tier: &str, size: &str, selected: bool) -> egui::Response {
     let (name_colour, size_colour) = if selected {
         (theme::CYAN, theme::CYAN.gamma_multiply(0.7))
     } else {
-        (theme::TEXT, theme::TEXT_DIM)
+        (theme::TEXT_DIM, theme::TEXT_DIM.gamma_multiply(0.8))
     };
 
     let mut job = egui::text::LayoutJob::default();
@@ -343,30 +346,19 @@ fn tier_button(ui: &mut egui::Ui, tier: &str, size: &str, selected: bool) -> egu
         &format!("\n{size}"),
         0.0,
         egui::TextFormat {
-            font_id: egui::FontId::monospace(11.0),
+            font_id: egui::FontId::monospace(10.5),
             color: size_colour,
             ..Default::default()
         },
     );
+    ui.selectable_label(selected, job)
+}
 
-    // A Button rather than selectable_label: the latter paints nothing until it
-    // is selected or hovered, so the options a user hasn't picked look like
-    // plain text and don't invite a click.
-    let (fill, stroke) = if selected {
-        (
-            theme::CYAN.gamma_multiply(0.18),
-            egui::Stroke::new(1.0, theme::CYAN),
-        )
-    } else {
-        (theme::SURFACE, egui::Stroke::new(1.0, theme::BORDER))
-    };
-    ui.add(
-        egui::Button::new(job)
-            .fill(fill)
-            .stroke(stroke)
-            .corner_radius(8.0)
-            .min_size(egui::vec2(96.0, 0.0)),
-    )
+/// An on/off switch wearing the same clothes as [`plan_option`]: lit cyan when
+/// on, dim when off.
+fn toggle(ui: &mut egui::Ui, label: &str, on: bool) -> egui::Response {
+    let text = egui::RichText::new(label).color(if on { theme::CYAN } else { theme::TEXT_DIM });
+    ui.selectable_label(on, text)
 }
 
 fn drop_zone(ui: &mut egui::Ui, hovering: bool) {
