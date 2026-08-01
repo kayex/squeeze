@@ -111,10 +111,15 @@ fn target_video_bps(info: &MediaInfo, opts: &CompressOptions, audio: AudioAction
     ((video_bits / info.duration_s).round() as i64).max(MIN_VIDEO_BPS)
 }
 
-/// Cap to 1080p, then step down further if there aren't enough bits to make the
-/// resolution worthwhile. Never upscales. Dimensions are forced even (yuv420p).
+/// Step the resolution down only as far as the bitrate warrants. Above ~10 Mbit/s
+/// there's enough to do a 1440p/4K source justice, so it's kept; below that,
+/// spending the bits on fewer, better pixels wins. Never upscales. Dimensions are
+/// forced even (yuv420p).
 fn choose_resolution(info: &MediaInfo, video_bps: i64) -> (i32, i32) {
-    let mut target_h = info.height.min(1080);
+    let mut target_h = info.height;
+    if video_bps < 10_000_000 {
+        target_h = target_h.min(1080);
+    }
     if video_bps < 1_600_000 {
         target_h = target_h.min(720);
     }
