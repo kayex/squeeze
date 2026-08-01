@@ -141,7 +141,14 @@ pub fn compress_to_target(
         if passes >= opts.max_passes {
             break;
         }
-        plan = plan.shrink(final_bytes, &info, opts);
+        // Once the plan stops changing, the bitrate floor and resolution ladder
+        // have nothing left to give; repeating the encode would only burn time
+        // and produce the same file.
+        let next = plan.shrink(final_bytes, &info, opts);
+        if next == plan {
+            break;
+        }
+        plan = next;
     }
 
     Ok(CompressOutcome {

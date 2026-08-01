@@ -16,11 +16,13 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 
 const VIDEO_EXTS: &[&str] = &["mp4", "mkv", "mov", "avi", "webm", "flv", "m4v", "ts"];
 
-/// Discord's upload ceilings (free / Nitro Basic / Nitro).
-const BUDGETS: &[(&str, u64)] = &[
-    ("10 MB", 10_000_000),
-    ("50 MB", 50_000_000),
-    ("500 MB", 500_000_000),
+/// Discord's upload ceilings, named by the tier they belong to: people know
+/// which Discord plan they have far better than they know its byte limit.
+/// (tier, limit shown when picked, bytes)
+const BUDGETS: &[(&str, &str, u64)] = &[
+    ("Free", "10 MB", 10_000_000),
+    ("Nitro Basic", "50 MB", 50_000_000),
+    ("Nitro", "500 MB", 500_000_000),
 ];
 
 /// Resolution + frame rate, for showing what a clip is and what it becomes.
@@ -58,6 +60,8 @@ enum Status {
 struct Job {
     path: PathBuf,
     source_bytes: u64,
+    /// The limit this job was queued against, for the over-limit message.
+    budget: u64,
     /// From probing the file when it was dropped; None if that failed.
     source: Option<Shape>,
     status: Status,
@@ -173,7 +177,7 @@ impl App {
             jobs: Vec::new(),
             updates: msg_rx,
             work: work_tx,
-            budget: BUDGETS[0].1,
+            budget: BUDGETS[0].2,
             keep_fps: false,
             logo,
         };
@@ -215,6 +219,7 @@ impl App {
         self.jobs.push(Job {
             path: path.clone(),
             source_bytes,
+            budget: self.budget,
             source,
             status,
         });
@@ -269,22 +274,32 @@ impl eframe::App for App {
                 }
                 ui.heading("squeeze");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    for (label, bytes) in BUDGETS.iter().rev() {
+                    for (tier, size, bytes) in BUDGETS.iter().rev() {
                         let selected = self.budget == *bytes;
                         let text = if selected {
-                            egui::RichText::new(*label).color(theme::CYAN)
+                            egui::RichText::new(*tier).color(theme::CYAN)
                         } else {
-                            egui::RichText::new(*label).color(theme::TEXT_DIM)
+                            egui::RichText::new(*tier).color(theme::TEXT_DIM)
                         };
                         if ui
                             .selectable_label(selected, text)
-                            .on_hover_text("Target upload limit")
+                            .on_hover_text(format!("Discord {tier}: {size} per upload"))
                             .clicked()
                         {
                             self.budget = *bytes;
                         }
                     }
-                    ui.label(egui::RichText::new("Fit under").color(theme::TEXT_DIM));
+                    // Only the chosen limit is spelled out, and it sits left of
+                    // the buttons: in a right-to-left layout its width changes
+                    // don't shift them around.
+                    let size = BUDGETS
+                        .iter()
+                        .find(|(_, _, b)| *b == self.budget)
+                        .map(|(_, s, _)| *s)
+                        .unwrap_or("");
+                    ui.label(
+                        egui::RichText::new(format!("Fit under {size}")).color(theme::TEXT_DIM),
+                    );
                 });
             });
             // Keep every control in the same right-hand column rather than
@@ -387,7 +402,7 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                                 );
                             } else {
                                 ui.label(
-                                    egui::RichText::new(format!("{sizes}  over limit"))
+                                    egui::RichText::new(format!("{sizes}  too big"))
                                         .monospace()
                                         .color(theme::WARN),
                                 );
@@ -457,6 +472,21 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                     ui.add_space(6.0);
                     theme::gradient_bar(ui, *fraction);
                 }
+                // Landing over the limit is not an error, so say what happened
+                // and what would help rather than leaving a bare warning colour.
+                Status::Done { fits: false, .. } => {
+                    ui.add_space(3.0);
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Couldn't reach {} even at the lowest quality. \
+                             The clip is too long for that limit; trim it to a \
+                             shorter section and try again.",
+                            budget_label(job.budget)
+                        ))
+                        .small()
+                        .color(theme::WARN),
+                    );
+                }
                 Status::Done { .. } => {}
                 Status::Failed(err) => {
                     ui.add_space(2.0);
@@ -477,6 +507,16 @@ fn output_path(input: &Path) -> PathBuf {
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
     dir.join(format!("{stem}_discord.mp4"))
+}
+
+/// The limit as the buttons spell it ("10 MB"), not as a computed figure
+/// ("10.0 MB"), so the message matches what was clicked.
+fn budget_label(bytes: u64) -> String {
+    BUDGETS
+        .iter()
+        .find(|(_, _, b)| *b == bytes)
+        .map(|(_, size, _)| (*size).to_string())
+        .unwrap_or_else(|| mb(bytes))
 }
 
 fn mb(bytes: u64) -> String {

@@ -19,7 +19,7 @@ pub enum AudioAction {
     Drop,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct EncodePlan {
     pub width: i32,
     pub height: i32,
@@ -125,27 +125,38 @@ fn target_video_bps(info: &MediaInfo, opts: &CompressOptions, audio: AudioAction
 
 /// Step the resolution down only as far as the bitrate warrants. Above ~10 Mbit/s
 /// there's enough to do a 1440p/4K source justice, so it's kept; below that,
-/// spending the bits on fewer, better pixels wins. Never upscales. Dimensions are
-/// forced even (yuv420p).
+/// spending the bits on fewer, better pixels wins. Never upscales.
+///
+/// The budget is a **pixel count**, not a height. Bitrate has to cover every
+/// pixel in the frame, so an ultrawide (3440x1440, 21:9) held to "1080p" would be
+/// 2580x1080 and carry 35% more pixels than a 16:9 clip at the same rate, looking
+/// correspondingly worse. Capping total pixels treats both alike; for 16:9 the
+/// result is identical to a height cap.
 fn choose_resolution(info: &MediaInfo, video_bps: i64) -> (i32, i32) {
-    let mut target_h = info.height;
-    if video_bps < 10_000_000 {
-        target_h = target_h.min(1080);
-    }
-    if video_bps < 1_600_000 {
-        target_h = target_h.min(720);
-    }
-    if video_bps < 700_000 {
-        target_h = target_h.min(480);
+    // 16:9 reference frames: 1920x1080, 1280x720, 854x480.
+    let max_pixels: i64 = if video_bps >= 10_000_000 {
+        i64::MAX
+    } else if video_bps >= 1_600_000 {
+        1920 * 1080
+    } else if video_bps >= 700_000 {
+        1280 * 720
+    } else {
+        854 * 480
+    };
+
+    let (w, h) = (info.width.max(2), info.height.max(2));
+    let pixels = w as i64 * h as i64;
+    if pixels <= max_pixels {
+        // Already within budget; keep source dimensions.
+        return (make_even(w), make_even(h));
     }
 
-    if target_h >= info.height {
-        // No downscale needed; keep source dimensions (already even from capture).
-        return (make_even(info.width), make_even(info.height));
-    }
-
-    let width = (info.width as f64 * target_h as f64 / info.height as f64).round() as i32;
-    (make_even(width), make_even(target_h))
+    // Shrink both axes by the same factor, so the aspect ratio is preserved.
+    let scale = (max_pixels as f64 / pixels as f64).sqrt();
+    (
+        make_even((w as f64 * scale).round() as i32),
+        make_even((h as f64 * scale).round() as i32),
+    )
 }
 
 /// Always normalize to CFR. Cap 60→30 when bits are tight; otherwise keep the
