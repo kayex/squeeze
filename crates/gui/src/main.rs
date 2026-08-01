@@ -297,10 +297,14 @@ impl eframe::App for App {
             ui.add_space(2.0);
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if toggle(ui, "No audio", self.no_audio).clicked() {
+                    // Cells butt together: -1 so the neighbours' strokes land on
+                    // top of each other rather than reading as a 2px divider.
+                    ui.spacing_mut().item_spacing.x = -1.0;
+                    // Right-to-left, so the rightmost cell is added first.
+                    if toggle(ui, "No audio", self.no_audio, Seg::Right).clicked() {
                         self.no_audio = !self.no_audio;
                     }
-                    if toggle(ui, "Keep 60 fps", self.keep_fps).clicked() {
+                    if toggle(ui, "Keep 60 fps", self.keep_fps, Seg::Left).clicked() {
                         self.keep_fps = !self.keep_fps;
                     }
                 });
@@ -354,20 +358,59 @@ fn plan_option(ui: &mut egui::Ui, tier: &str, size: &str, selected: bool) -> egu
     pinned_button(ui, job, selected)
 }
 
-/// An on/off switch wearing the same clothes as [`plan_option`]: lit cyan when
-/// on, dim when off.
-fn toggle(ui: &mut egui::Ui, label: &str, on: bool) -> egui::Response {
+/// Where a switch sits in its group, which decides the corners it rounds.
+#[derive(Clone, Copy, PartialEq)]
+enum Seg {
+    Left,
+    Right,
+}
+
+/// An on/off switch drawn as one cell of a joined group, so the pair reads as a
+/// control even when neither is on. A lone lit-or-dim word does not: an option
+/// that is off has nothing to say it can be clicked.
+fn toggle(ui: &mut egui::Ui, label: &str, on: bool, seg: Seg) -> egui::Response {
+    let r = 8;
+    let corners = match seg {
+        Seg::Left => egui::CornerRadius {
+            nw: r,
+            sw: r,
+            ne: 0,
+            se: 0,
+        },
+        Seg::Right => egui::CornerRadius {
+            ne: r,
+            se: r,
+            nw: 0,
+            sw: 0,
+        },
+    };
+    // On: filled, with dark text for contrast. Off: still a visible cell.
+    let (fill, stroke, text) = if on {
+        (theme::CYAN, theme::CYAN, theme::BG)
+    } else {
+        (theme::SURFACE, theme::BORDER, theme::TEXT_DIM)
+    };
+
     let mut job = egui::text::LayoutJob::default();
     job.append(
         label,
         0.0,
         egui::TextFormat {
-            font_id: egui::FontId::proportional(13.5),
-            color: if on { theme::CYAN } else { theme::TEXT_DIM },
+            font_id: egui::FontId::proportional(13.0),
+            color: text,
             ..Default::default()
         },
     );
-    pinned_button(ui, job, on)
+
+    let galley = ui.painter().layout_job(job.clone());
+    let padding = ui.spacing().button_padding;
+    ui.add(
+        egui::Button::new(job)
+            .fill(fill)
+            .stroke(egui::Stroke::new(1.0, stroke))
+            .corner_radius(corners)
+            .min_size(galley.size() + padding * 2.0),
+    )
 }
 
 /// A selectable button whose width is pinned to its own text.
