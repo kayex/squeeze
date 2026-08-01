@@ -273,60 +273,36 @@ impl eframe::App for App {
                     ui.add_space(2.0);
                 }
                 ui.heading("squeeze");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    for (tier, size, bytes) in BUDGETS.iter().rev() {
-                        let selected = self.budget == *bytes;
-                        let text = if selected {
-                            egui::RichText::new(*tier).color(theme::CYAN)
-                        } else {
-                            egui::RichText::new(*tier).color(theme::TEXT_DIM)
-                        };
-                        if ui
-                            .selectable_label(selected, text)
-                            .on_hover_text(format!("Discord {tier}: {size} per upload"))
-                            .clicked()
-                        {
-                            self.budget = *bytes;
-                        }
-                    }
-                });
             });
-            // The limit goes on the next row, right-aligned so it sits under the
-            // buttons. Sharing their row made it the leftmost item, which in a
-            // right-to-left layout absorbs every width change to its right and
-            // visibly twitched; it also ran into the tier name and read as one
-            // sentence ("Fit under 10 MB Free").
-            //
-            // The horizontal wrapper matters: with_layout on its own claims all
-            // the remaining vertical space and starves everything below it.
-            ui.add_space(4.0);
+
+            // Controls read as a plain top-to-bottom form: a label saying what
+            // is being asked, then the answers. Each limit lives inside its own
+            // button, so there is no separate readout to collide with the text
+            // beside it.
+            ui.add_space(14.0);
+            ui.label(
+                egui::RichText::new("Your Discord plan")
+                    .small()
+                    .color(theme::TEXT_DIM),
+            );
+            ui.add_space(5.0);
             ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let size = BUDGETS
-                        .iter()
-                        .find(|(_, _, b)| *b == self.budget)
-                        .map(|(_, s, _)| *s)
-                        .unwrap_or("");
-                    // Right-aligned in a fixed 6 columns: monospace then makes
-                    // "10 MB" and "500 MB" exactly the same width, so switching
-                    // tiers can't nudge the checkbox beside it.
-                    ui.label(
-                        egui::RichText::new(format!("up to {size:>6}"))
-                            .monospace()
-                            .size(11.5)
-                            .color(theme::TEXT_DIM),
-                    );
-                    ui.add_space(14.0);
-                    ui.checkbox(&mut self.keep_fps, "Keep original frame rate")
-                        .on_hover_text(
-                            "By default 60 fps clips drop to 30 when there aren't enough \
-                             bits to go round, which usually looks better. Tick this to \
-                             keep the frame rate and accept softer frames.\n\n\
-                             Applies to clips added from now on.",
-                        );
-                });
+                for (tier, size, bytes) in BUDGETS {
+                    if tier_button(ui, tier, size, self.budget == *bytes).clicked() {
+                        self.budget = *bytes;
+                    }
+                    ui.add_space(2.0);
+                }
             });
-            ui.add_space(10.0);
+
+            ui.add_space(12.0);
+            ui.checkbox(&mut self.keep_fps, "Keep original frame rate");
+            ui.label(
+                egui::RichText::new("Otherwise 60 fps drops to 30 when space is tight")
+                    .small()
+                    .color(theme::TEXT_DIM),
+            );
+            ui.add_space(14.0);
 
             drop_zone(ui, hovering);
             ui.add_space(8.0);
@@ -342,6 +318,55 @@ impl eframe::App for App {
             });
         });
     }
+}
+
+/// A plan button: the tier on top, the limit it buys underneath. Keeping the two
+/// together means the choice explains itself, with nothing to read across.
+fn tier_button(ui: &mut egui::Ui, tier: &str, size: &str, selected: bool) -> egui::Response {
+    let (name_colour, size_colour) = if selected {
+        (theme::CYAN, theme::CYAN.gamma_multiply(0.7))
+    } else {
+        (theme::TEXT, theme::TEXT_DIM)
+    };
+
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        tier,
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::proportional(13.5),
+            color: name_colour,
+            ..Default::default()
+        },
+    );
+    job.append(
+        &format!("\n{size}"),
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::monospace(11.0),
+            color: size_colour,
+            ..Default::default()
+        },
+    );
+
+    // A Button rather than selectable_label: the latter paints nothing until it
+    // is selected or hovered, so the options a user hasn't picked look like
+    // plain text and don't invite a click.
+    let (fill, stroke) = if selected {
+        (
+            theme::CYAN.gamma_multiply(0.18),
+            egui::Stroke::new(1.0, theme::CYAN),
+        )
+    } else {
+        (theme::SURFACE, egui::Stroke::new(1.0, theme::BORDER))
+    };
+    ui.add(
+        egui::Button::new(job)
+            .fill(fill)
+            .stroke(stroke)
+            .corner_radius(8.0)
+            .min_size(egui::vec2(96.0, 0.0)),
+    )
 }
 
 fn drop_zone(ui: &mut egui::Ui, hovering: bool) {
