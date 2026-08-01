@@ -14,13 +14,13 @@ jobs:
       # Rust's default /MD). Yields exes with no FFmpeg DLLs to ship.
       VCPKG_TRIPLET: x64-windows-static-md
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo + target
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -40,13 +40,13 @@ jobs:
           Add-Content $env:GITHUB_ENV "VCPKGRS_TRIPLET=$env:VCPKG_TRIPLET"
 
       # Cache the built FFmpeg static libs/headers directly. We use explicit
-      # restore + save (not actions/cache@v4) because that combined action only
+      # restore + save (not actions/cache@v6) because that combined action only
       # saves on a *successful* job — and we want the 30-min FFmpeg build to
       # persist even when a later step (the link) fails. The save runs right
       # after install, before the build, so a failed build can't lose it.
       - name: Restore vcpkg installed tree
         id: vcpkg-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: C:/vcpkg/installed
           key: vcpkg-installed-${{ env.VCPKG_TRIPLET }}-ffmpeg8-v4
@@ -61,7 +61,7 @@ jobs:
 
       - name: Save vcpkg installed tree
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: C:/vcpkg/installed
           key: vcpkg-installed-${{ env.VCPKG_TRIPLET }}-ffmpeg8-v4
@@ -79,7 +79,7 @@ jobs:
           Copy-Item LICENSE dist/        # FFmpeg/LGPL notice rides along
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: squeeze-windows-x64
           path: dist/
