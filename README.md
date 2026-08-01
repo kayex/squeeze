@@ -67,7 +67,7 @@ point fewer or smaller frames look better than blurry ones.
 
 4. **Frame rate**: anything above 45 fps is halved to 30 when the bitrate is
    under ~3 Mbit/s, which is the usual case for clips longer than about
-   20 seconds at 10 MB. **Keep 60 fps** in the window (or `--keep-fps`)
+   20 seconds at 10 MB. **Keep fps** in the window (or `--keep-fps`)
    overrides this. Variable frame rate, which ShadowPlay records,
    is converted to constant.
 

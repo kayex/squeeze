@@ -351,7 +351,7 @@ impl eframe::App for App {
                 // nothing, because a horizontal layout claims the full width
                 // and so is already "centred"; the group's own width has to
                 // be measured and the slack split.
-                let group = toggle_width(ui, "Keep 60 fps") + toggle_width(ui, "No audio") - 1.0;
+                let group = toggle_width(ui, "Keep fps") + toggle_width(ui, "No audio") - 1.0;
                 ui.add_space(((ui.available_width() - group) / 2.0).max(0.0));
                 // Cells butt together: -1 so the neighbours' strokes land on
                 // top of each other rather than reading as a 2px divider.
@@ -360,7 +360,7 @@ impl eframe::App for App {
                 // neighbour is hovered before it paints the shared seam.
                 let left = toggle(
                     ui,
-                    "Keep 60 fps",
+                    "Keep fps",
                     self.keep_fps,
                     Seg::Left,
                     self.no_audio,
