@@ -47,11 +47,14 @@ enum Status {
         max_passes: u32,
         fraction: f32,
         encoder: String,
+        bitrate_bps: i64,
         out: Shape,
     },
     Done {
         bytes: u64,
         fits: bool,
+        encoder: String,
+        bitrate_bps: i64,
         out: Shape,
     },
     Failed(String),
@@ -134,7 +137,11 @@ impl App {
                 let tx = msg_tx.clone();
                 let repaint = ctx.clone();
                 let mut last = -1.0f32;
+                // compress_to_target doesn't report the encoder in its outcome,
+                // so keep the last one it named for the finished row.
+                let mut used_encoder = String::new();
                 let result = compress_to_target(&item.path, &output, &opts, |p| {
+                    used_encoder.clone_from(&p.encoder);
                     // Fires per packet, so only forward meaningful changes.
                     if (p.fraction - last).abs() < 0.01 && p.fraction > 0.0 {
                         return;
@@ -147,6 +154,7 @@ impl App {
                             max_passes: p.max_passes,
                             fraction: p.fraction,
                             encoder: p.encoder.clone(),
+                            bitrate_bps: p.plan.video_bitrate_bps,
                             out: Shape {
                                 width: p.plan.width,
                                 height: p.plan.height,
@@ -161,6 +169,8 @@ impl App {
                     Ok(o) => Status::Done {
                         bytes: o.final_bytes,
                         fits: o.fits,
+                        encoder: used_encoder,
+                        bitrate_bps: o.last_plan.video_bitrate_bps,
                         out: Shape {
                             width: o.last_plan.width,
                             height: o.last_plan.height,
@@ -592,15 +602,22 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                     pass,
                     max_passes,
                     encoder,
+                    bitrate_bps,
                     ..
                 } => {
+                    let rate = bitrate(*bitrate_bps);
                     if *pass > 1 {
-                        format!("{encoder} · pass {pass}/{max_passes}")
+                        format!("{encoder} · {rate} · pass {pass}/{max_passes}")
                     } else {
-                        encoder.clone()
+                        format!("{encoder} · {rate}")
                     }
                 }
-                _ => String::new(),
+                Status::Done {
+                    encoder,
+                    bitrate_bps,
+                    ..
+                } => format!("{encoder} · {}", bitrate(*bitrate_bps)),
+                Status::Failed(_) => String::new(),
             };
             // The encoder is right-aligned, under the size result it belongs
             // with. Trailing it after the shape gave it wider separation than
@@ -680,6 +697,16 @@ fn budget_label(bytes: u64) -> String {
         .find(|(_, _, b)| *b == bytes)
         .map(|(_, size, _)| (*size).to_string())
         .unwrap_or_else(|| mb(bytes))
+}
+
+/// The video bitrate the encode is aiming at. This comes from the plan, so it
+/// means the same thing whichever encoder is in use.
+fn bitrate(bps: i64) -> String {
+    if bps >= 1_000_000 {
+        format!("{:.1} Mbit/s", bps as f64 / 1_000_000.0)
+    } else {
+        format!("{} kbit/s", bps / 1000)
+    }
 }
 
 fn mb(bytes: u64) -> String {

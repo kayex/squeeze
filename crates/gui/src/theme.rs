@@ -168,10 +168,11 @@ pub fn gradient_bar(ui: &mut egui::Ui, fraction: f32) {
 
     // Colour is interpolated across the *whole* track, so the gradient stays put
     // as the bar grows rather than stretching with it.
-    let end = mix(CYAN, PURPLE, fraction);
+    // Runs purple to cyan, so a finished bar lands on the brighter colour.
+    let end = mix(PURPLE, CYAN, fraction);
     let mut mesh = egui::Mesh::default();
-    mesh.colored_vertex(filled.left_top(), CYAN);
-    mesh.colored_vertex(filled.left_bottom(), CYAN);
+    mesh.colored_vertex(filled.left_top(), PURPLE);
+    mesh.colored_vertex(filled.left_bottom(), PURPLE);
     mesh.colored_vertex(filled.right_top(), end);
     mesh.colored_vertex(filled.right_bottom(), end);
     mesh.add_triangle(0, 1, 2);
@@ -182,7 +183,7 @@ pub fn gradient_bar(ui: &mut egui::Ui, fraction: f32) {
     painter.circle_filled(
         egui::pos2(filled.left() + radius, filled.center().y),
         radius,
-        CYAN,
+        PURPLE,
     );
     painter.circle_filled(
         egui::pos2(filled.right() - radius, filled.center().y),
