@@ -70,15 +70,16 @@ jobs:
           path: C:/vcpkg/installed
           key: vcpkg-installed-${{ env.VCPKG_TRIPLET }}-ffmpeg8-v4
 
-      - name: Build squeeze.exe (release, static FFmpeg)
+      - name: Build squeeze.exe + squeeze-gui.exe (release, static FFmpeg)
         shell: pwsh
-        run: cargo build -p cli --release --features vcpkg
+        run: cargo build --release -p cli -p gui --features cli/vcpkg,gui/vcpkg
 
       - name: Stage artifact
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/squeeze.exe dist/
+          Copy-Item target/release/squeeze-gui.exe dist/
           Copy-Item LICENSE dist/        # FFmpeg/LGPL notice rides along
 
       - name: Upload artifact

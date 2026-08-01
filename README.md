@@ -13,12 +13,19 @@ rationale and roadmap.
 
 ---
 
-## Status: Phase 0 complete — encode engine validated ✅
+## Status: Phase 1 — drag-and-drop GUI 🚧
 
-The headless CLI works and the load-bearing assumption is **proven on real
-hardware**: a single self-contained `squeeze.exe` (no DLLs, no user-installed
-FFmpeg) reliably produces a `< N` MB H.264 MP4 via NVENC. No GUI yet — that's
-Phase 1.
+Two binaries ship side by side:
+
+- **`squeeze-gui.exe`** — the app: drop clips on the window, pick a size budget
+  (10 / 50 / 500 MB), watch per-file progress. Encoding runs on a background
+  worker. Files dropped onto the `.exe` icon are queued too. Native egui — no
+  Electron, no webview.
+- **`squeeze.exe`** — the headless CLI, for scripting and debugging.
+
+Phase 0's engine is **proven on real hardware**: a single self-contained
+executable (no DLLs, no user-installed FFmpeg) reliably produces a `< N` MB
+H.264 MP4 via NVENC.
 
 | validated | result |
 |---|---|
