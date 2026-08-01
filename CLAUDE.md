@@ -1,6 +1,6 @@
-# squeeze2 — instructions for Claude
+# squeeze — instructions for Claude
 
-squeeze2 compresses NVIDIA ShadowPlay clips small enough to share on Discord.
+squeeze compresses NVIDIA ShadowPlay clips small enough to share on Discord.
 Rust workspace: **`engine`** (size-targeted H.264 encode library — in-process
 FFmpeg/`libav*` via rsmpeg, NVENC) + **`cli`** (the `squeeze` binary). Dev tasks
 go through **`just`** (see the `justfile`). The Windows `.exe` is built in GitHub

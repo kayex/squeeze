@@ -1,7 +1,7 @@
 squeeze — shrink NVIDIA ShadowPlay clips to share on Discord
 ============================================================
 
-  https://github.com/kayex/squeeze2
+  https://github.com/kayex/squeeze
 
 
 WHAT'S IN HERE

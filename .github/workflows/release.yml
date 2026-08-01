@@ -44,7 +44,7 @@ jobs:
           cat out/SHA256SUMS.txt
 
       # Ties these exact binaries to this public workflow run, so anyone can
-      # verify provenance with: gh attestation verify <file> -R kayex/squeeze2
+      # verify provenance with: gh attestation verify <file> -R kayex/squeeze
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v4
         with:

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Drag-and-drop desktop UI for squeeze2."
+description = "Drag-and-drop desktop UI for squeeze."
 build = "build.rs"
 
 [build-dependencies]
@@ -21,7 +21,7 @@ OriginalFilename = "squeeze.exe"
 InternalName = "squeeze"
 CompanyName = "Johan Vester"
 LegalCopyright = "Copyright © 2026 Johan Vester. MIT licensed."
-Comments = "https://github.com/kayex/squeeze2"
+Comments = "https://github.com/kayex/squeeze"
 
 [[bin]]
 name = "squeeze"

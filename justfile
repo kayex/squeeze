@@ -1,4 +1,4 @@
-# squeeze2 dev tasks — run `just` to list them.
+# squeeze dev tasks — run `just` to list them.
 # Local recipes target macOS (system FFmpeg, no NVENC). The Windows .exe is
 # built in GitHub Actions (see the ci-* recipes) — see docs/deploy-and-test.md.
 set shell := ["bash", "-euo", "pipefail", "-c"]

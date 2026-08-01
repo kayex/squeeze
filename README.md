@@ -18,7 +18,7 @@ becomes `clip_discord.mp4`. Originals are left alone.
 ## Install
 
 Download `squeeze.exe` from the
-[latest release](https://github.com/kayex/squeeze2/releases/latest) and run it.
+[latest release](https://github.com/kayex/squeeze/releases/latest) and run it.
 
 The first time you do, Windows will show *"Windows protected your PC"* and an
 unknown publisher — click **More info → Run anyway**. This is because the app
@@ -108,7 +108,7 @@ Builds are produced by GitHub Actions, so you can also confirm a file came from
 this repository's workflow:
 
 ```powershell
-gh attestation verify squeeze.exe -R kayex/squeeze2
+gh attestation verify squeeze.exe -R kayex/squeeze
 ```
 
 ## Building from source
