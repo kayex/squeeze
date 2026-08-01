@@ -672,10 +672,22 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
             ui.scope(|ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
                 if let Some(src) = job.source {
-                    stat_line(ui, Some(src), Some(mb(job.source_bytes)), None, "");
+                    stat_line(
+                        ui,
+                        Some(src),
+                        Some((mb(job.source_bytes), theme::TEXT_DIM)),
+                        None,
+                        "",
+                    );
                 }
                 match &job.status {
-                    Status::Queued => stat_line(ui, None, Some(mb(job.budget)), None, "waiting"),
+                    Status::Queued => stat_line(
+                        ui,
+                        None,
+                        Some((mb(job.budget), theme::TEXT_DIM)),
+                        None,
+                        "waiting",
+                    ),
                     Status::Running {
                         out,
                         encoder,
@@ -693,18 +705,26 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                         // The chosen limit stands in until the real size is
                         // known, so it is obvious which setting the job started
                         // with rather than being taken on trust.
-                        stat_line(ui, Some(*out), Some(mb(job.budget)), job.source, &note);
+                        stat_line(
+                            ui,
+                            Some(*out),
+                            Some((mb(job.budget), theme::TEXT_DIM)),
+                            job.source,
+                            &note,
+                        );
                     }
                     Status::Done {
                         bytes,
+                        fits,
                         out,
                         encoder,
                         bitrate_bps,
-                        ..
                     } => stat_line(
                         ui,
                         Some(*out),
-                        Some(mb(*bytes)),
+                        // Echoes the verdict in the header, so the number that
+                        // matters is the one the eye lands on.
+                        Some((mb(*bytes), if *fits { theme::OK } else { theme::WARN })),
                         job.source,
                         &format!("{encoder} · {}", bitrate(*bitrate_bps)),
                     ),
@@ -749,7 +769,7 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
 fn stat_line(
     ui: &mut egui::Ui,
     shape: Option<Shape>,
-    size: Option<String>,
+    size: Option<(String, egui::Color32)>,
     compared_to: Option<Shape>,
     note: &str,
 ) {
@@ -766,6 +786,9 @@ fn stat_line(
             .size(11.5)
             .color(if accent { theme::CYAN } else { theme::TEXT_DIM })
     };
+    let tinted = |t: String, colour: egui::Color32| {
+        egui::RichText::new(t).monospace().size(11.5).color(colour)
+    };
 
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
@@ -778,7 +801,8 @@ fn stat_line(
         };
         ui.label(cell(format!("{res:<9}"), res_changed));
         ui.label(cell(format!("{fps:>7}"), fps_changed));
-        ui.label(cell(format!("{:>9}", size.unwrap_or_default()), false));
+        let (size_text, size_colour) = size.unwrap_or((String::new(), theme::TEXT_DIM));
+        ui.label(tinted(format!("{size_text:>9}"), size_colour));
         if !note.is_empty() {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(cell(note.to_string(), false));
