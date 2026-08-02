@@ -20,6 +20,14 @@ const AUDIO_MAX_SHARE: f64 = 0.30;
 /// Re-encoding stereo AAC below this stops being worth keeping.
 const AUDIO_MIN_BPS: i64 = 48_000;
 
+/// First-pass aim for NVENC, applied when the caller's `margin` is looser.
+/// NVENC's VBR ran ~11% over its requested average on a real ShadowPlay
+/// capture (RTX 4060, driver 610), so aiming 0.92 under a 10 MB ceiling lands
+/// at 10.2 MB and buys a correction pass on every clip. 0.85 absorbs an
+/// overshoot of up to 17% and still fits in one pass. Software encoders track
+/// their requested rate closely and keep the tighter default.
+pub(crate) const NVENC_MARGIN: f64 = 0.85;
+
 /// Roughly what one frame per second is worth spending. Calibrated so 60 fps
 /// wants 3 Mbit/s, which is where the single 60-to-30 rule used to sit.
 const BPS_PER_FPS: f64 = 50_000.0;

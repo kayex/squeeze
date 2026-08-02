@@ -155,7 +155,6 @@ pub fn transcode(
     info: &MediaInfo,
     encoder_name: &CStr,
     encoder_kind: EncoderKind,
-    audio_action: AudioAction,
     on_progress: &mut dyn FnMut(f32),
 ) -> Result<()> {
     // ---- input + video decoder ----
@@ -199,6 +198,14 @@ pub fn transcode(
         let mut ctx = AVCodecContext::new(&decoder);
         ctx.apply_codecpar(&par).context("apply codecpar")?;
         ctx.set_pkt_timebase(stream.time_base);
+        // libavcodec decodes on ONE thread unless told otherwise, and one core
+        // cannot keep pace with a high-bitrate ShadowPlay capture: a 98 Mbit/s
+        // 1440p clip decoded ~4x slower than realtime and stalled NVENC behind
+        // it. Zero sizes the pool from the CPU count. No typed setter in
+        // rsmpeg, hence the raw pointer.
+        unsafe {
+            (*ctx.as_mut_ptr()).thread_count = 0;
+        }
         if let Some(fr) = stream.guess_framerate() {
             ctx.set_framerate(fr);
         }
@@ -283,7 +290,7 @@ pub fn transcode(
     // Optional audio output stream: either the source parameters copied across
     // verbatim, or an AAC encoder the source is fed through.
     let mut audio_enc: Option<AudioEncode> = None;
-    let audio_out = match audio_action {
+    let audio_out = match plan.audio {
         AudioAction::Drop => None,
         AudioAction::Copy => audio_par.as_ref().map(|par| {
             let mut stream = ofmt.new_stream();
