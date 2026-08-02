@@ -86,6 +86,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          # Names each encoder candidate as it is considered. Encoder selection
+          # happens before any other output, so without this a crash during
+          # selection leaves nothing at all to go on.
+          $env:SQUEEZE_TRACE_ENCODER = '1'
           $cli = 'target/release/squeeze-cli.exe'
           $out = $env:RUNNER_TEMP
           $src = 'tests/data/smoke.mp4'

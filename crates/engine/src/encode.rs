@@ -69,8 +69,62 @@ pub fn resolve_encoder(choice: crate::Encoder) -> Result<(&'static CStr, Encoder
 
 /// Try to actually open `name` with a minimal configuration. This is the only
 /// reliable way to tell "encoder exists in the build" from "encoder works here".
+/// Whether the NVIDIA runtime can be loaded at all.
+///
+/// Opening `h264_nvenc` on a machine with no driver crashed the process with an
+/// access violation rather than failing cleanly, which killed the default
+/// encoder selection for every user without an NVIDIA card. Loading the library
+/// ourselves is a question FFmpeg is never asked, so it cannot answer it badly.
+#[cfg(target_os = "windows")]
+fn nvidia_runtime_present() -> bool {
+    extern "system" {
+        fn LoadLibraryA(name: *const i8) -> *mut std::ffi::c_void;
+        fn FreeLibrary(handle: *mut std::ffi::c_void) -> i32;
+    }
+    // nvcuda.dll ships with the display driver; NVENC needs it before it needs
+    // anything of its own.
+    unsafe {
+        let handle = LoadLibraryA(c"nvcuda.dll".as_ptr());
+        if handle.is_null() {
+            return false;
+        }
+        FreeLibrary(handle);
+        true
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn nvidia_runtime_present() -> bool {
+    extern "C" {
+        fn dlopen(file: *const i8, mode: i32) -> *mut std::ffi::c_void;
+        fn dlclose(handle: *mut std::ffi::c_void) -> i32;
+    }
+    const RTLD_LAZY: i32 = 1;
+    unsafe {
+        let handle = dlopen(c"libcuda.so.1".as_ptr(), RTLD_LAZY);
+        if handle.is_null() {
+            return false;
+        }
+        dlclose(handle);
+        true
+    }
+}
+
+/// No NVENC on macOS, so nothing to guard.
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+fn nvidia_runtime_present() -> bool {
+    false
+}
+
 fn encoder_opens(name: &CStr, kind: EncoderKind) -> bool {
+    // Checked before the codec is even looked up: the point is to never hand
+    // nvenc to avcodec_open2 on a machine that cannot support it.
+    if matches!(kind, EncoderKind::Nvenc) && !nvidia_runtime_present() {
+        trace_probe(name, "skipped, no NVIDIA runtime");
+        return false;
+    }
     let Some(codec) = AVCodec::find_encoder_by_name(name) else {
+        trace_probe(name, "not in this build");
         return false;
     };
     let mut ctx = AVCodecContext::new(&codec);
@@ -80,7 +134,18 @@ fn encoder_opens(name: &CStr, kind: EncoderKind) -> bool {
     ctx.set_time_base(ra(1, 30));
     ctx.set_framerate(ra(30, 1));
     ctx.set_bit_rate(200_000);
-    ctx.open(encoder_options(kind)).is_ok()
+    let opened = ctx.open(encoder_options(kind)).is_ok();
+    trace_probe(name, if opened { "opened" } else { "would not open" });
+    opened
+}
+
+/// Why a candidate was passed over. Silent unless `SQUEEZE_TRACE_ENCODER` is
+/// set: selection happens before any progress is reported, so when it goes
+/// wrong there is otherwise nothing at all to look at.
+fn trace_probe(name: &CStr, outcome: &str) {
+    if std::env::var_os("SQUEEZE_TRACE_ENCODER").is_some() {
+        eprintln!("encoder probe: {} {}", name.to_string_lossy(), outcome);
+    }
 }
 
 pub fn transcode(
@@ -359,9 +424,9 @@ fn encoder_options(kind: EncoderKind) -> Option<AVDictionary> {
         // exactly what a size-targeted encoder must not do. Asking for the
         // bitrate mode and letting it drop frames when it must is the trade
         // this tool wants: a skipped frame beats a file too big to send.
-        EncoderKind::OpenH264 => Some(
-            AVDictionary::new(c"rc_mode", c"bitrate", 0).set(c"allow_skip_frames", c"1", 0),
-        ),
+        EncoderKind::OpenH264 => {
+            Some(AVDictionary::new(c"rc_mode", c"bitrate", 0).set(c"allow_skip_frames", c"1", 0))
+        }
     }
 }
 
