@@ -409,7 +409,7 @@ impl eframe::App for App {
                 &mut [
                     ("Keep fps", &mut self.keep_fps),
                     ("Keep resolution", &mut self.keep_resolution),
-                    ("No audio", &mut self.no_audio),
+                    ("Remove audio", &mut self.no_audio),
                 ],
             );
             ui.add_space(12.0);

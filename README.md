@@ -88,7 +88,7 @@ point fewer or smaller frames look better than blurry ones.
    Past about a third of the budget it is re-encoded to AAC at a lower rate so
    the picture keeps room to breathe. A capture that keeps game sound and
    microphone on separate tracks has them mixed together, since most players
-   only play the first one they find. The **No audio** switch (or `--no-audio`)
+   only play the first one they find. The **Remove audio** switch (or `--no-audio`)
    drops the sound entirely and spends its share on video.
 
 6. **Encoding**: H.264, on the GPU where possible.
