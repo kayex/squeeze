@@ -109,6 +109,9 @@ struct App {
     keep_resolution: bool,
     /// Drop the audio track, spending its share of the budget on video.
     no_audio: bool,
+    /// Scroll the queue to its end on the next frame, set when a file arrives.
+    /// One-shot, so it never fights the user scrolling around afterwards.
+    reveal_newest: bool,
     logo: Option<egui::TextureHandle>,
 }
 
@@ -222,6 +225,7 @@ impl App {
             keep_fps: false,
             keep_resolution: false,
             no_audio: false,
+            reveal_newest: false,
             logo,
         };
 
@@ -268,6 +272,7 @@ impl App {
             took: None,
             status,
         });
+        self.reveal_newest = true;
         if queued {
             let _ = self.work.send(WorkItem {
                 id,
@@ -419,6 +424,18 @@ impl eframe::App for App {
                 for job in &self.jobs {
                     job_row(ui, job);
                     ui.add_space(6.0);
+                }
+                // Dropping a file the window is too short to show leaves its
+                // card invisible, which reads as the drop not having worked.
+                // Glide to the end of the queue once per arrival; a drop is a
+                // user action, so the jump answers them rather than
+                // interrupting them, and finishing jobs never re-scroll.
+                if self.reveal_newest {
+                    self.reveal_newest = false;
+                    ui.scroll_to_cursor_animation(
+                        Some(egui::Align::Max),
+                        egui::style::ScrollAnimation::duration(0.3),
+                    );
                 }
             });
         });
