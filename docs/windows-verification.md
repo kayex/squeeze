@@ -44,9 +44,10 @@ Check:
 - [ ] The pass line says `[h264_nvenc]`, not openh264. If it says openh264, NVENC
       is not being selected and that is the finding.
 - [ ] It reports `✓ fits`.
-- [ ] **Pass count.** On the Mac essentially everything finished in one pass. If
-      NVENC routinely needs two or three, the `margin: 0.92` in
-      `crates/engine/src/lib.rs` is mistuned for it and should come down.
+- [ ] **Pass count.** NVENC overshoots its requested average by ~11%, so its
+      margin is clamped to 0.85 (`NVENC_MARGIN` in `crates/engine/src/plan.rs`).
+      Confirm clips still normally fit in one pass; if some need two, the clamp
+      wants to come down a little more.
 - [ ] Encode time. A 296-second clip took ~8 minutes on the Mac's CPU; NVENC
       should be far quicker. Anything slower than realtime is suspicious.
 - [ ] **Is there still headroom for NVDEC?** Software decode used to run on a
@@ -127,7 +128,8 @@ people use this.
 - [ ] Drag a clip onto `squeeze.exe` in Explorer (the argument path, separate
       code from the drop handler).
 - [ ] The tier buttons (Free / Nitro Basic / Nitro) change the target.
-- [ ] `Keep fps`, `Keep resolution`, `No audio` each visibly change the result.
+- [ ] `Keep fps`, `Keep resolution`, `Remove audio` each visibly change the
+      result.
 - [ ] Turn on `Keep resolution` with a long clip: the amber note about the frame
       being held should appear, naming a smaller size.
 - [ ] Feed it a clip already under the limit: the card should say
