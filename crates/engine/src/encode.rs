@@ -155,7 +155,6 @@ pub fn transcode(
     info: &MediaInfo,
     encoder_name: &CStr,
     encoder_kind: EncoderKind,
-    audio_action: AudioAction,
     on_progress: &mut dyn FnMut(f32),
 ) -> Result<()> {
     // ---- input + video decoder ----
@@ -291,7 +290,7 @@ pub fn transcode(
     // Optional audio output stream: either the source parameters copied across
     // verbatim, or an AAC encoder the source is fed through.
     let mut audio_enc: Option<AudioEncode> = None;
-    let audio_out = match audio_action {
+    let audio_out = match plan.audio {
         AudioAction::Drop => None,
         AudioAction::Copy => audio_par.as_ref().map(|par| {
             let mut stream = ofmt.new_stream();

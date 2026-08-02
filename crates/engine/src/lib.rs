@@ -195,7 +195,6 @@ pub fn compress_to_target(
             &info,
             encoder_name,
             encoder_kind,
-            plan.audio,
             &mut report,
         )
         .with_context(|| format!("encode pass {passes} failed"))?;
