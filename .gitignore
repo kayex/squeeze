@@ -1,5 +1,6 @@
 /target
 /dist
+/notes
 .DS_Store
 assets/icon_preview.png
 *.exe
