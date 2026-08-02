@@ -49,6 +49,22 @@ Check:
       `crates/engine/src/lib.rs` is mistuned for it and should come down.
 - [ ] Encode time. A 296-second clip took ~8 minutes on the Mac's CPU; NVENC
       should be far quicker. Anything slower than realtime is suspicious.
+- [ ] **Is there still headroom for NVDEC?** Software decode used to run on a
+      single thread and starved the encoder; that is fixed (a pool sized from
+      the CPU count, 53 s down to 12 s per pass on a 98 Mbit/s clip), so the
+      easy win is gone. What is left decides whether NVDEC decoding is worth
+      building at all. During a long encode, open Task Manager's Performance
+      tab, select the GPU, set one graph to **Video Encode**, and note it
+      alongside overall CPU:
+      - Video Encode near 100%: the encoder is the cap. NVDEC buys nothing;
+        drop the idea.
+      - Video Encode idling while CPU cores are pinned: decode and scaling
+        still starve the GPU even multithreaded, and NVDEC plus GPU scaling
+        has headroom to claim. Note both percentages, and whether the clip
+        was AV1 (dav1d is the heaviest of the three software decoders).
+      The decoders (`h264_cuvid`, `hevc_cuvid`, `av1_cuvid`) are already
+      compiled into the shipped exe, so this measurement is the only missing
+      input.
 
 Then the same clip at each tier, and a long one:
 
