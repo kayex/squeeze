@@ -158,6 +158,17 @@ pub fn compress_to_target(
 
     let (encoder_name, encoder_kind) = encode::resolve_encoder(opts.encoder)?;
 
+    // NVENC overshoots its requested average enough that the default margin
+    // parks the first pass right on the ceiling; aim it lower so one pass
+    // normally suffices. min() so a caller asking for even more headroom wins.
+    let opts = &{
+        let mut eff = opts.clone();
+        if matches!(encoder_kind, encode::EncoderKind::Nvenc) {
+            eff.margin = eff.margin.min(plan::NVENC_MARGIN);
+        }
+        eff
+    };
+
     let mut plan = plan::plan_initial(&info, opts);
     let mut passes = 0u32;
     let mut final_bytes: u64;
