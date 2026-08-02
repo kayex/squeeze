@@ -70,6 +70,42 @@ jobs:
         shell: pwsh
         run: cargo build --release -p cli -p gui --features cli/vcpkg,gui/vcpkg
 
+      # CI compiled the binaries but never ran them, so a broken decode or a
+      # missing software encoder would ship silently. The runner has no NVIDIA
+      # GPU and the shipped FFmpeg has no libx264 (GPL), which makes this the
+      # only place the openh264 fallback real users land on is ever exercised.
+      - name: Smoke test the built CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cli = 'target/release/squeeze-cli.exe'
+          $out = $env:RUNNER_TEMP
+          $src = 'tests/data/smoke.mp4'
+
+          # A ceiling well under the source forces a real encode rather than
+          # the copy path, and is tight enough to trip the frame-rate rule.
+          $log = & $cli --max-mb 0.15 --encoder openh264 --suffix _sw -o $out $src | Out-String
+          Write-Host $log
+          if ($LASTEXITCODE -ne 0) { throw 'openh264 encode failed' }
+          if ($log -notmatch 'libopenh264') { throw 'expected libopenh264 to be the encoder' }
+
+          $sw = Get-Item (Join-Path $out 'smoke_sw.mp4')
+          if ($sw.Length -gt 150000) { throw "over the 0.15 MB ceiling: $($sw.Length) bytes" }
+          if ($sw.Length -lt 10000)  { throw "implausibly small: $($sw.Length) bytes" }
+
+          # Feeding the result back in proves it is readable H.264 without
+          # needing ffprobe on the runner; a generous ceiling takes the copy path.
+          $log = & $cli --max-mb 5 --suffix _rt -o $out (Join-Path $out 'smoke_sw.mp4') | Out-String
+          Write-Host $log
+          if ($LASTEXITCODE -ne 0) { throw 'could not read back the encoded output' }
+          if ($log -notmatch 'streams copied') { throw 'expected the copy path for a clip already under the limit' }
+
+          # Auto has to resolve to something on a machine with no GPU.
+          & $cli --max-mb 0.15 --suffix _auto -o $out $src | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'auto encoder selection failed without a GPU' }
+
+          Write-Host 'smoke test passed'
+
       - name: Stage artifact
         shell: pwsh
         run: |

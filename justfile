@@ -17,6 +17,16 @@ export DYLD_FALLBACK_LIBRARY_PATH := ffmpeg_prefix / "lib"
 default:
     @just --list
 
+# Run the CLI against the committed fixture, the way CI does on Windows.
+# ENCODER defaults to x264 here because macOS Homebrew FFmpeg has no
+# openh264; CI pins openh264, which is what the shipped .exe actually uses.
+smoke ENCODER="x264":
+    @cargo build -p cli --features system --release 2>/dev/null
+    ./target/release/squeeze-cli --max-mb 0.15 --encoder {{ENCODER}} \
+        --suffix _sw -o /tmp tests/data/smoke.mp4
+    ./target/release/squeeze-cli --max-mb 5 --suffix _rt -o /tmp /tmp/smoke_sw.mp4
+    @echo "smoke test passed"
+
 # Type-check the workspace (macOS, system FFmpeg)
 check:
     cargo check -p cli --features system
