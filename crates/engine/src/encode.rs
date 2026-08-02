@@ -199,6 +199,14 @@ pub fn transcode(
         let mut ctx = AVCodecContext::new(&decoder);
         ctx.apply_codecpar(&par).context("apply codecpar")?;
         ctx.set_pkt_timebase(stream.time_base);
+        // libavcodec decodes on ONE thread unless told otherwise, and one core
+        // cannot keep pace with a high-bitrate ShadowPlay capture: a 98 Mbit/s
+        // 1440p clip decoded ~4x slower than realtime and stalled NVENC behind
+        // it. Zero sizes the pool from the CPU count. No typed setter in
+        // rsmpeg, hence the raw pointer.
+        unsafe {
+            (*ctx.as_mut_ptr()).thread_count = 0;
+        }
         if let Some(fr) = stream.guess_framerate() {
             ctx.set_framerate(fr);
         }
