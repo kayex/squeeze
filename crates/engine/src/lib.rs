@@ -118,7 +118,13 @@ pub fn compress_to_target(
     let source_bytes = std::fs::metadata(input).map(|m| m.len()).unwrap_or(0);
     if info.video_codec == "h264" && source_bytes > 0 && source_bytes <= opts.max_bytes {
         let keep_audio = opts.include_audio && info.has_audio;
-        encode::remux(&input_c, &output_c, keep_audio).context("remux")?;
+        // Several tracks still have to be mixed, which needs an encode; the
+        // planner picks the rate, exactly as it would for a full pass.
+        let mix_bps = match plan::plan_initial(&info, opts).audio {
+            AudioAction::Reencode { bps } if info.audio_tracks > 1 => Some(bps),
+            _ => None,
+        };
+        encode::remux(&input_c, &output_c, keep_audio, mix_bps).context("remux")?;
         let final_bytes = std::fs::metadata(output)
             .with_context(|| format!("stat output {}", output.display()))?
             .len();
@@ -131,10 +137,10 @@ pub fn compress_to_target(
                 fps_num: info.fps_num,
                 fps_den: info.fps_den.max(1),
                 video_bitrate_bps: info.video_bitrate_bps,
-                audio: if keep_audio {
-                    AudioAction::Copy
-                } else {
-                    AudioAction::Drop
+                audio: match (keep_audio, mix_bps) {
+                    (false, _) => AudioAction::Drop,
+                    (true, Some(bps)) => AudioAction::Reencode { bps },
+                    (true, None) => AudioAction::Copy,
                 },
             };
             return Ok(CompressOutcome {

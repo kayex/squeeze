@@ -97,21 +97,34 @@ pub fn transcode(
     let mut ifmt = AVFormatContextInput::open(input).context("open input")?;
 
     let mut video_in: Option<usize> = None;
-    let mut audio_in: Option<usize> = None;
+    // Every audio stream, not just the first: a capture that keeps game sound
+    // and microphone apart carries two, and dropping one loses half the sound.
+    let mut audio_ins: Vec<usize> = Vec::new();
     for (i, stream) in ifmt.streams().iter().enumerate() {
         let t = stream.codecpar().codec_type();
         if t.is_video() && video_in.is_none() {
             video_in = Some(i);
-        } else if t.is_audio() && audio_in.is_none() {
-            audio_in = Some(i);
+        } else if t.is_audio() {
+            audio_ins.push(i);
         }
     }
     let video_in = video_in.context("input has no video stream")?;
 
     // Cache time bases / params before we start borrowing ifmt mutably for reads.
+    let audio_in = audio_ins.first().copied();
     let audio_in_tb = audio_in.map(|i| ifmt.streams()[i].time_base);
     let video_in_tb = ifmt.streams()[video_in].time_base;
     let audio_par = audio_in.map(|i| ifmt.streams()[i].codecpar().clone());
+    let audio_tracks: Vec<(usize, AVCodecParameters, ffi::AVRational)> = audio_ins
+        .iter()
+        .map(|&i| {
+            (
+                i,
+                ifmt.streams()[i].codecpar().clone(),
+                ifmt.streams()[i].time_base,
+            )
+        })
+        .collect();
 
     let mut dec_ctx = {
         let stream = &ifmt.streams()[video_in];
@@ -212,10 +225,9 @@ pub fn transcode(
             stream.set_codecpar(par.clone());
             stream.index as usize
         }),
-        AudioAction::Reencode { bps } => match (audio_in, audio_par.as_ref()) {
-            (Some(idx), Some(par)) => {
-                let stream_tb = ifmt.streams()[idx].time_base;
-                let mut a = AudioEncode::new(par, stream_tb, bps)?;
+        AudioAction::Reencode { bps } => match audio_tracks.is_empty() {
+            false => {
+                let mut a = AudioEncode::new(&audio_tracks, bps)?;
                 let mut stream = ofmt.new_stream();
                 stream.set_codecpar(a.enc_ctx.extract_codecpar());
                 stream.set_time_base(a.enc_ctx.time_base);
@@ -224,7 +236,7 @@ pub fn transcode(
                 audio_enc = Some(a);
                 Some(out)
             }
-            _ => None,
+            true => None,
         },
     };
 
@@ -271,17 +283,19 @@ pub fn transcode(
                     video_out,
                 )?;
             }
-        } else if Some(idx) == audio_in {
+        } else if audio_ins.contains(&idx) {
             if let Some(a) = audio_enc.as_mut() {
-                a.push_packet(Some(&packet), &mut ofmt)?;
-            } else if let (Some(out), Some(in_tb), Some(out_tb)) =
-                (audio_out, audio_in_tb, audio_out_tb)
-            {
-                packet.rescale_ts(in_tb, out_tb);
-                packet.set_stream_index(out as i32);
-                packet.set_pos(-1);
-                ofmt.interleaved_write_frame(&mut packet)
-                    .context("write audio packet")?;
+                a.push_packet(idx, &packet, &mut ofmt)?;
+            } else if Some(idx) == audio_in {
+                if let (Some(out), Some(in_tb), Some(out_tb)) =
+                    (audio_out, audio_in_tb, audio_out_tb)
+                {
+                    packet.rescale_ts(in_tb, out_tb);
+                    packet.set_stream_index(out as i32);
+                    packet.set_pos(-1);
+                    ofmt.interleaved_write_frame(&mut packet)
+                        .context("write audio packet")?;
+                }
             }
         }
     }
@@ -360,50 +374,100 @@ fn video_filter_spec(plan: &EncodePlan) -> CString {
 /// generation of quality and, because the target bitrate is clamped to the
 /// source's own, come out about the same size regardless. Also upgrades an MKV
 /// wrapper to MP4 and adds faststart on the way past.
-pub fn remux(input: &CStr, output: &CStr, include_audio: bool) -> Result<()> {
+pub fn remux(input: &CStr, output: &CStr, include_audio: bool, mix_bps: Option<i64>) -> Result<()> {
     let mut ifmt = AVFormatContextInput::open(input).context("open input")?;
     let mut ofmt = AVFormatContextOutput::create(output).context("create output")?;
 
     let n = ifmt.streams().len();
-    let mut map: Vec<Option<usize>> = Vec::with_capacity(n);
     let mut in_tb: Vec<ffi::AVRational> = Vec::with_capacity(n);
-    let (mut have_video, mut have_audio) = (false, false);
+    let mut video_in: Option<usize> = None;
+    let mut audio_ins: Vec<usize> = Vec::new();
     for i in 0..n {
-        let (par, tb, kind) = {
-            let stream = &ifmt.streams()[i];
-            (
-                stream.codecpar().clone(),
-                stream.time_base,
-                stream.codecpar().codec_type(),
-            )
+        let stream = &ifmt.streams()[i];
+        in_tb.push(stream.time_base);
+        let kind = stream.codecpar().codec_type();
+        if kind.is_video() && video_in.is_none() {
+            video_in = Some(i);
+        } else if kind.is_audio() && include_audio {
+            audio_ins.push(i);
+        }
+    }
+    let video_in = video_in.context("input has no video stream")?;
+
+    // Video is always copied here: that is the whole point of this path.
+    let video_out = {
+        let (par, tb) = {
+            let stream = &ifmt.streams()[video_in];
+            (stream.codecpar().clone(), stream.time_base)
         };
-        in_tb.push(tb);
-        let take = if kind.is_video() && !have_video {
-            have_video = true;
-            true
-        } else if kind.is_audio() && include_audio && !have_audio {
-            have_audio = true;
-            true
-        } else {
-            false
-        };
-        map.push(if take {
+        let mut out = ofmt.new_stream();
+        out.set_codecpar(par);
+        out.set_time_base(tb);
+        // The source tag belongs to the source container and can be
+        // meaningless in MP4; zero lets the muxer choose the right one.
+        unsafe {
+            (*(*out.as_mut_ptr()).codecpar).codec_tag = 0;
+        }
+        out.index as usize
+    };
+
+    // Audio can only be copied when there is a single track. Several have to be
+    // mixed, and mixing means encoding even though the picture is untouched.
+    let mut audio_enc: Option<AudioEncode> = None;
+    let mut audio_copy_from: Option<usize> = None;
+    let audio_out = match (audio_ins.len(), mix_bps) {
+        (0, _) => None,
+        (1, _) => {
+            let (par, tb) = {
+                let stream = &ifmt.streams()[audio_ins[0]];
+                (stream.codecpar().clone(), stream.time_base)
+            };
             let mut out = ofmt.new_stream();
             out.set_codecpar(par);
             out.set_time_base(tb);
-            // The source tag belongs to the source container and can be
-            // meaningless in MP4; zero lets the muxer choose the right one.
             unsafe {
                 (*(*out.as_mut_ptr()).codecpar).codec_tag = 0;
             }
+            audio_copy_from = Some(audio_ins[0]);
             Some(out.index as usize)
-        } else {
-            None
-        });
-    }
-    if !have_video {
-        bail!("input has no video stream");
-    }
+        }
+        (_, Some(bps)) => {
+            let tracks: Vec<(usize, AVCodecParameters, ffi::AVRational)> = audio_ins
+                .iter()
+                .map(|&i| {
+                    (
+                        i,
+                        ifmt.streams()[i].codecpar().clone(),
+                        ifmt.streams()[i].time_base,
+                    )
+                })
+                .collect();
+            let mut a = AudioEncode::new(&tracks, bps)?;
+            let mut stream = ofmt.new_stream();
+            stream.set_codecpar(a.enc_ctx.extract_codecpar());
+            stream.set_time_base(a.enc_ctx.time_base);
+            a.out_index = stream.index as usize;
+            let out = a.out_index;
+            audio_enc = Some(a);
+            Some(out)
+        }
+        // Several tracks but no mix rate asked for: keep the first rather than
+        // inventing one.
+        (_, None) => {
+            let (par, tb) = {
+                let stream = &ifmt.streams()[audio_ins[0]];
+                (stream.codecpar().clone(), stream.time_base)
+            };
+            let mut out = ofmt.new_stream();
+            out.set_codecpar(par);
+            out.set_time_base(tb);
+            unsafe {
+                (*(*out.as_mut_ptr()).codecpar).codec_tag = 0;
+            }
+            audio_copy_from = Some(audio_ins[0]);
+            Some(out.index as usize)
+        }
+    };
 
     let mut header_opts = Some(AVDictionary::new(c"movflags", c"+faststart", 0));
     ofmt.write_header(&mut header_opts)
@@ -412,13 +476,28 @@ pub fn remux(input: &CStr, output: &CStr, include_audio: bool) -> Result<()> {
 
     while let Some(mut pkt) = ifmt.read_packet().context("read packet")? {
         let i = pkt.stream_index as usize;
-        if let Some(o) = map.get(i).copied().flatten() {
-            pkt.rescale_ts(in_tb[i], out_tb[o]);
-            pkt.set_stream_index(o as i32);
+        if i == video_in {
+            pkt.rescale_ts(in_tb[i], out_tb[video_out]);
+            pkt.set_stream_index(video_out as i32);
             pkt.set_pos(-1);
             ofmt.interleaved_write_frame(&mut pkt)
-                .context("write packet")?;
+                .context("write video packet")?;
+        } else if audio_ins.contains(&i) {
+            if let Some(a) = audio_enc.as_mut() {
+                a.push_packet(i, &pkt, &mut ofmt)?;
+            } else if Some(i) == audio_copy_from {
+                if let Some(out) = audio_out {
+                    pkt.rescale_ts(in_tb[i], out_tb[out]);
+                    pkt.set_stream_index(out as i32);
+                    pkt.set_pos(-1);
+                    ofmt.interleaved_write_frame(&mut pkt)
+                        .context("write audio packet")?;
+                }
+            }
         }
+    }
+    if let Some(a) = audio_enc.as_mut() {
+        a.finish(&mut ofmt)?;
     }
     ofmt.write_trailer().context("write trailer")?;
     Ok(())
@@ -433,33 +512,51 @@ pub fn remux(input: &CStr, output: &CStr, include_audio: bool) -> Result<()> {
 /// that way. The graph is stored and its two endpoints looked up by name on
 /// each call: holding the endpoint handles next to the graph they borrow from
 /// would make this struct self-referential.
-struct AudioEncode {
+struct AudioInput {
+    stream_index: usize,
     dec_ctx: AVCodecContext,
+}
+
+struct AudioEncode {
+    inputs: Vec<AudioInput>,
     enc_ctx: AVCodecContext,
     graph: AVFilterGraph,
     out_index: usize,
 }
 
 impl AudioEncode {
-    fn new(par: &AVCodecParameters, stream_tb: ffi::AVRational, bps: i64) -> Result<Self> {
-        let decoder = AVCodec::find_decoder(par.codec_id).context("no decoder for source audio")?;
-        let mut dec_ctx = AVCodecContext::new(&decoder);
-        dec_ctx
-            .apply_codecpar(par)
-            .context("apply audio codecpar")?;
-        dec_ctx.set_pkt_timebase(stream_tb);
-        dec_ctx.open(None).context("open audio decoder")?;
+    /// One decoder per source track, all meeting at an `amix` when there is
+    /// more than one.
+    fn new(tracks: &[(usize, AVCodecParameters, ffi::AVRational)], bps: i64) -> Result<Self> {
+        let mut inputs = Vec::with_capacity(tracks.len());
+        for (stream_index, par, tb) in tracks {
+            let decoder =
+                AVCodec::find_decoder(par.codec_id).context("no decoder for source audio")?;
+            let mut dec_ctx = AVCodecContext::new(&decoder);
+            dec_ctx
+                .apply_codecpar(par)
+                .context("apply audio codecpar")?;
+            dec_ctx.set_pkt_timebase(*tb);
+            dec_ctx.open(None).context("open audio decoder")?;
+            inputs.push(AudioInput {
+                stream_index: *stream_index,
+                dec_ctx,
+            });
+        }
+        if inputs.is_empty() {
+            bail!("no audio tracks to encode");
+        }
 
         let encoder = AVCodec::find_encoder_by_name(c"aac").context("no AAC encoder in build")?;
         let mut enc_ctx = AVCodecContext::new(&encoder);
-        let rate = if dec_ctx.sample_rate > 0 {
-            dec_ctx.sample_rate
+        let rate = if inputs[0].dec_ctx.sample_rate > 0 {
+            inputs[0].dec_ctx.sample_rate
         } else {
             48_000
         };
         // Rebuilt from the channel count rather than copied: a source layout may
         // own a heap allocation that must not be aliased by a second context.
-        let channels = dec_ctx.ch_layout().nb_channels.clamp(1, 8);
+        let channels = inputs[0].dec_ctx.ch_layout().nb_channels.clamp(1, 8);
         let layout = AVChannelLayout::from_nb_channels(channels);
         enc_ctx.set_ch_layout(layout.into_inner());
         enc_ctx.set_sample_rate(rate);
@@ -469,9 +566,9 @@ impl AudioEncode {
         enc_ctx.open(None).context("open AAC encoder")?;
 
         let mut graph = AVFilterGraph::new();
-        Self::init_filter(&mut graph, &dec_ctx, &enc_ctx, rate, channels)?;
+        Self::init_filter(&mut graph, &inputs, &enc_ctx, rate, channels)?;
         Ok(Self {
-            dec_ctx,
+            inputs,
             enc_ctx,
             graph,
             out_index: 0,
@@ -480,7 +577,7 @@ impl AudioEncode {
 
     fn init_filter(
         graph: &mut AVFilterGraph,
-        dec_ctx: &AVCodecContext,
+        inputs: &[AudioInput],
         enc_ctx: &AVCodecContext,
         rate: i32,
         channels: i32,
@@ -488,29 +585,39 @@ impl AudioEncode {
         let abuffer = AVFilter::get_by_name(c"abuffer").context("abuffer filter missing")?;
         let abuffersink =
             AVFilter::get_by_name(c"abuffersink").context("abuffersink filter missing")?;
-        let in_layout = dec_ctx
-            .ch_layout()
-            .describe()
-            .unwrap_or_else(|_| CString::new("stereo").unwrap());
-        let fmt_name = unsafe { ffi::av_get_sample_fmt_name(dec_ctx.sample_fmt) };
-        let fmt_name = if fmt_name.is_null() {
-            CString::new("fltp").unwrap()
-        } else {
-            unsafe { CStr::from_ptr(fmt_name) }.to_owned()
-        };
-        let args = CString::new(format!(
-            "time_base={}/{}:sample_rate={}:sample_fmt={}:channel_layout={}",
-            dec_ctx.pkt_timebase.num.max(1),
-            dec_ctx.pkt_timebase.den.max(1),
-            dec_ctx.sample_rate.max(1),
-            fmt_name.to_string_lossy(),
-            in_layout.to_string_lossy(),
-        ))
-        .unwrap();
 
-        let mut src = graph
-            .create_filter_context(&abuffer, c"ain", Some(&args))
-            .context("create abuffer source")?;
+        let mut srcs = Vec::with_capacity(inputs.len());
+        let mut labels = String::new();
+        for (i, input) in inputs.iter().enumerate() {
+            let dec_ctx = &input.dec_ctx;
+            let in_layout = dec_ctx
+                .ch_layout()
+                .describe()
+                .unwrap_or_else(|_| CString::new("stereo").unwrap());
+            let fmt_ptr = unsafe { ffi::av_get_sample_fmt_name(dec_ctx.sample_fmt) };
+            let fmt_name = if fmt_ptr.is_null() {
+                CString::new("fltp").unwrap()
+            } else {
+                unsafe { CStr::from_ptr(fmt_ptr) }.to_owned()
+            };
+            let args = CString::new(format!(
+                "time_base={}/{}:sample_rate={}:sample_fmt={}:channel_layout={}",
+                dec_ctx.pkt_timebase.num.max(1),
+                dec_ctx.pkt_timebase.den.max(1),
+                dec_ctx.sample_rate.max(1),
+                fmt_name.to_string_lossy(),
+                in_layout.to_string_lossy(),
+            ))
+            .unwrap();
+            let name = CString::new(format!("ain{i}")).unwrap();
+            srcs.push(
+                graph
+                    .create_filter_context(&abuffer, &name, Some(&args))
+                    .context("create abuffer source")?,
+            );
+            labels.push_str(&format!("[ain{i}]"));
+        }
+
         let mut sink = graph
             .alloc_filter_context(&abuffersink, c"aout")
             .context("alloc abuffer sink")?;
@@ -519,17 +626,39 @@ impl AudioEncode {
         let out_layout = AVChannelLayout::from_nb_channels(channels)
             .describe()
             .unwrap_or_else(|_| CString::new("stereo").unwrap());
+        // amix's default normalisation divides by the number of live inputs.
+        // Summing without it measurably clips real game audio, which already
+        // peaks near full scale, so the quieter-but-clean mix is the right one.
+        let mix = if inputs.len() > 1 {
+            format!("amix=inputs={}:duration=longest,", inputs.len())
+        } else {
+            String::new()
+        };
         // Endpoints are labelled rather than left to positional matching, so
         // the graph is linked by name and cannot silently come out dangling.
         let spec = CString::new(format!(
-            "[ain]aformat=sample_fmts=fltp:sample_rates={rate}:channel_layouts={}[aout]",
+            "{labels}{mix}aformat=sample_fmts=fltp:sample_rates={rate}:channel_layouts={}[aout]",
             out_layout.to_string_lossy()
         ))
         .unwrap();
-        let outputs = AVFilterInOut::new(c"ain", &mut src, 0);
-        let inputs = AVFilterInOut::new(c"aout", &mut sink, 0);
+
+        // One entry per source, chained head-first. rsmpeg exposes no list
+        // builder, so the `next` links are written directly; ownership passes
+        // into the chain, whose head frees the whole thing on drop.
+        let mut outputs: Option<AVFilterInOut> = None;
+        for (i, src) in srcs.iter_mut().enumerate().rev() {
+            let name = CString::new(format!("ain{i}")).unwrap();
+            let mut inout = AVFilterInOut::new(&name, src, 0);
+            if let Some(rest) = outputs.take() {
+                unsafe {
+                    (*inout.as_mut_ptr()).next = rest.into_raw().as_ptr();
+                }
+            }
+            outputs = Some(inout);
+        }
+        let inputs_io = AVFilterInOut::new(c"aout", &mut sink, 0);
         graph
-            .parse_ptr(&spec, Some(inputs), Some(outputs))
+            .parse_ptr(&spec, Some(inputs_io), outputs)
             .context("parse audio filter spec")?;
         graph.config().context("configure audio filter graph")?;
 
@@ -543,42 +672,62 @@ impl AudioEncode {
         Ok(())
     }
 
-    /// Decode one source packet (or `None` to flush) and push whatever comes out
-    /// through the graph and into the encoder.
+    /// Decode one packet from `stream_index` and push what comes out into that
+    /// track's branch of the graph.
     fn push_packet(
         &mut self,
-        packet: Option<&rsmpeg::avcodec::AVPacket>,
+        stream_index: usize,
+        packet: &rsmpeg::avcodec::AVPacket,
         ofmt: &mut AVFormatContextOutput,
     ) -> Result<()> {
-        self.dec_ctx
-            .send_packet(packet)
+        let Some(pos) = self
+            .inputs
+            .iter()
+            .position(|i| i.stream_index == stream_index)
+        else {
+            return Ok(());
+        };
+        self.inputs[pos]
+            .dec_ctx
+            .send_packet(Some(packet))
             .context("audio decode submit")?;
+        self.drain_decoder(pos, ofmt)
+    }
+
+    fn drain_decoder(&mut self, pos: usize, ofmt: &mut AVFormatContextOutput) -> Result<()> {
         loop {
-            let frame = match self.dec_ctx.receive_frame() {
+            let frame = match self.inputs[pos].dec_ctx.receive_frame() {
                 Ok(f) => f,
                 Err(RsmpegError::DecoderDrainError) | Err(RsmpegError::DecoderFlushedError) => {
                     break
                 }
                 Err(e) => bail!(e),
             };
-            self.filter_and_encode(Some(frame), ofmt)?;
+            self.feed(pos, Some(frame), ofmt)?;
         }
         Ok(())
     }
 
-    fn filter_and_encode(
+    /// Hand a frame (or EOF) to one branch, then take whatever the mix yields.
+    fn feed(
         &mut self,
+        pos: usize,
         frame: Option<AVFrame>,
         ofmt: &mut AVFormatContextOutput,
     ) -> Result<()> {
         {
+            let name = CString::new(format!("ain{pos}")).unwrap();
             let mut src = self
                 .graph
-                .get_filter(c"ain")
-                .ok_or_else(|| anyhow!("audio filter source vanished"))?;
+                .get_filter(&name)
+                .ok_or_else(|| anyhow!("audio filter source {pos} vanished"))?;
             src.buffersrc_add_frame(frame, None)
                 .context("feed audio filter")?;
         }
+        self.pull(ofmt)
+    }
+
+    fn pull(&mut self, ofmt: &mut AVFormatContextOutput) -> Result<()> {
         loop {
             let filtered = {
                 let mut sink = self
@@ -623,10 +772,18 @@ impl AudioEncode {
         Ok(())
     }
 
-    /// Drain decoder, graph and encoder in that order.
+    /// Drain every decoder, close every branch, then flush the encoder. All
+    /// branches must reach EOF or the mix will keep waiting on one of them.
     fn finish(&mut self, ofmt: &mut AVFormatContextOutput) -> Result<()> {
-        self.push_packet(None, ofmt)?;
-        self.filter_and_encode(None, ofmt)?;
+        for pos in 0..self.inputs.len() {
+            self.inputs[pos]
+                .dec_ctx
+                .send_packet(None)
+                .context("audio decoder flush")?;
+            self.drain_decoder(pos, ofmt)?;
+            self.feed(pos, None, ofmt)?;
+        }
+        self.pull(ofmt)?;
         self.encode_write(None, ofmt)?;
         Ok(())
     }

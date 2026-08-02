@@ -15,6 +15,9 @@ pub struct MediaInfo {
     pub fps_num: i32,
     pub fps_den: i32,
     pub has_audio: bool,
+    /// How many audio streams the container carries. ShadowPlay writes two when
+    /// asked to keep game sound and microphone apart.
+    pub audio_tracks: usize,
     /// Audio bitrate in bits/s, or 0 if the container didn't record it.
     pub audio_bitrate_bps: i64,
     /// Video bitrate in bits/s, or 0 if it couldn't be determined. Used as a
@@ -41,6 +44,7 @@ pub fn probe(path: &Path) -> Result<MediaInfo> {
         fps_num: 0,
         fps_den: 1,
         has_audio: false,
+        audio_tracks: 0,
         audio_bitrate_bps: 0,
         video_bitrate_bps: 0,
         video_codec: String::new(),
@@ -78,10 +82,13 @@ pub fn probe(path: &Path) -> Result<MediaInfo> {
             if let Some(codec) = AVCodec::find_decoder(par.codec_id) {
                 info.video_codec = codec.name().to_string_lossy().into_owned();
             }
-        } else if codec_type.is_audio() && !info.has_audio {
-            info.has_audio = true;
-            if par.bit_rate > 0 {
-                info.audio_bitrate_bps = par.bit_rate;
+        } else if codec_type.is_audio() {
+            info.audio_tracks += 1;
+            if !info.has_audio {
+                info.has_audio = true;
+                if par.bit_rate > 0 {
+                    info.audio_bitrate_bps = par.bit_rate;
+                }
             }
         }
     }

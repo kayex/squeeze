@@ -108,10 +108,19 @@ fn choose_audio(info: &MediaInfo, opts: &CompressOptions) -> AudioAction {
     let source_bps = assumed_audio_bps(info);
     let budget_bytes = opts.max_bytes as f64 * opts.margin;
     let copied_bytes = source_bps as f64 * info.duration_s / 8.0;
+    let share_bps = (budget_bytes * AUDIO_MAX_SHARE * 8.0 / info.duration_s) as i64;
+
+    // Several tracks have to be mixed down into the one a player will actually
+    // play, and mixing means encoding: there is no copy that combines them.
+    if info.audio_tracks > 1 {
+        let bps = share_bps
+            .max(AUDIO_MIN_BPS)
+            .min(source_bps.max(AUDIO_MIN_BPS));
+        return AudioAction::Reencode { bps };
+    }
     if copied_bytes <= budget_bytes * AUDIO_MAX_SHARE {
         return AudioAction::Copy;
     }
-    let share_bps = (budget_bytes * AUDIO_MAX_SHARE * 8.0 / info.duration_s) as i64;
     // max() before min() on purpose: a source already quieter than the floor
     // lands back on its own rate and is copied rather than needlessly re-encoded.
     let bps = share_bps.max(AUDIO_MIN_BPS).min(source_bps);

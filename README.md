@@ -81,8 +81,10 @@ point fewer or smaller frames look better than blurry ones.
    modest part of the budget. On a long clip it stops being modest, since a
    195 kbit/s track runs to 7.3 MB over five minutes, most of a 10 MB limit.
    Past about a third of the budget it is re-encoded to AAC at a lower rate so
-   the picture keeps room to breathe. The **No audio** switch (or `--no-audio`)
-   drops it entirely and spends its share on video.
+   the picture keeps room to breathe. A capture that keeps game sound and
+   microphone on separate tracks has them mixed together, since a player will
+   only play the first one it finds. The **No audio** switch (or `--no-audio`)
+   drops the sound entirely and spends its share on video.
 
 6. **Encoding**: H.264, on the GPU where possible.
 
