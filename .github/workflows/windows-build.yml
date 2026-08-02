@@ -74,6 +74,14 @@ jobs:
       # missing software encoder would ship silently. The runner has no NVIDIA
       # GPU and the shipped FFmpeg has no libx264 (GPL), which makes this the
       # only place the openh264 fallback real users land on is ever exercised.
+      # CI compiled the binaries but never ran them, so a broken decode or a
+      # missing software encoder would ship silently. The runner has no NVIDIA
+      # GPU and the shipped FFmpeg has no libx264 (GPL), which makes this the
+      # only place the openh264 fallback real users land on is ever exercised.
+      #
+      # stderr goes to a file rather than through 2>&1: libav chatters there,
+      # and folding it into the success stream can make PowerShell raise
+      # NativeCommandError on output that is not an error at all.
       - name: Smoke test the built CLI
         shell: pwsh
         run: |
@@ -82,27 +90,38 @@ jobs:
           $out = $env:RUNNER_TEMP
           $src = 'tests/data/smoke.mp4'
 
+          function Invoke-Cli($label, $cliArgs) {
+            $errFile = Join-Path $out "$label.err"
+            $stdout = & $cli @cliArgs 2> $errFile | Out-String
+            $code = $LASTEXITCODE
+            $stderr = if (Test-Path $errFile) { Get-Content $errFile -Raw } else { '' }
+            Write-Host "--- $label (exit $code) ---"
+            Write-Host $stdout
+            if ($stderr) { Write-Host "stderr: $stderr" }
+            return @{ Code = $code; Out = $stdout; Err = $stderr }
+          }
+
           # A ceiling well under the source forces a real encode rather than
           # the copy path, and is tight enough to trip the frame-rate rule.
-          $log = & $cli --max-mb 0.15 --encoder openh264 --suffix _sw -o $out $src | Out-String
-          Write-Host $log
-          if ($LASTEXITCODE -ne 0) { throw 'openh264 encode failed' }
-          if ($log -notmatch 'libopenh264') { throw 'expected libopenh264 to be the encoder' }
+          $sw = Invoke-Cli 'openh264' @('--max-mb','0.15','--encoder','openh264','--suffix','_sw','-o',$out,$src)
+          if ($sw.Code -ne 0) { throw "openh264 encode failed (exit $($sw.Code)): $($sw.Err)" }
+          if ($sw.Out -notmatch 'libopenh264') { throw 'expected libopenh264 to be the encoder' }
 
-          $sw = Get-Item (Join-Path $out 'smoke_sw.mp4')
-          if ($sw.Length -gt 150000) { throw "over the 0.15 MB ceiling: $($sw.Length) bytes" }
-          if ($sw.Length -lt 10000)  { throw "implausibly small: $($sw.Length) bytes" }
+          $file = Get-Item (Join-Path $out 'smoke_sw.mp4')
+          if ($file.Length -gt 150000) { throw "over the 0.15 MB ceiling: $($file.Length) bytes" }
+          if ($file.Length -lt 10000)  { throw "implausibly small: $($file.Length) bytes" }
 
           # Feeding the result back in proves it is readable H.264 without
           # needing ffprobe on the runner; a generous ceiling takes the copy path.
-          $log = & $cli --max-mb 5 --suffix _rt -o $out (Join-Path $out 'smoke_sw.mp4') | Out-String
-          Write-Host $log
-          if ($LASTEXITCODE -ne 0) { throw 'could not read back the encoded output' }
-          if ($log -notmatch 'streams copied') { throw 'expected the copy path for a clip already under the limit' }
+          $rt = Invoke-Cli 'readback' @('--max-mb','5','--suffix','_rt','-o',$out,(Join-Path $out 'smoke_sw.mp4'))
+          if ($rt.Code -ne 0) { throw "could not read back the encoded output: $($rt.Err)" }
+          if ($rt.Out -notmatch 'streams copied') { throw 'expected the copy path for a clip already under the limit' }
 
-          # Auto has to resolve to something on a machine with no GPU.
-          & $cli --max-mb 0.15 --suffix _auto -o $out $src | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw 'auto encoder selection failed without a GPU' }
+          # Auto has to resolve to something on a machine with no GPU: NVENC
+          # cannot open, and this build carries no libx264.
+          $auto = Invoke-Cli 'auto' @('--max-mb','0.15','--suffix','_auto','-o',$out,$src)
+          if ($auto.Code -ne 0) { throw "auto encoder selection failed without a GPU (exit $($auto.Code)): $($auto.Err)" }
+          if ($auto.Out -notmatch 'libopenh264') { throw 'auto should fall through to libopenh264 on a GPU-less machine' }
 
           Write-Host 'smoke test passed'
 
