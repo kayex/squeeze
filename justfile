@@ -10,7 +10,18 @@ ffmpeg_prefix := `brew --prefix ffmpeg 2>/dev/null || echo /opt/homebrew/opt/ffm
 # Env so cargo links the system (Homebrew) FFmpeg on macOS. No NVENC here.
 export PATH := "/opt/homebrew/bin:/usr/local/bin:" + env_var('PATH')
 export PKG_CONFIG_PATH := ffmpeg_prefix / "lib/pkgconfig"
-export LIBCLANG_PATH := "/Library/Developer/CommandLineTools/usr/lib"
+# bindgen needs libclang, which sits in a different place under Command Line
+# Tools, full Xcode and Homebrew LLVM. Ask for the first one that is actually
+# there rather than naming the machine this was written on.
+libclang_dir := ```
+  for d in "$(xcode-select -p 2>/dev/null)/usr/lib" \
+           "$(xcode-select -p 2>/dev/null)/Toolchains/XcodeDefault.xctoolchain/usr/lib" \
+           "$(brew --prefix llvm 2>/dev/null)/lib" \
+           /Library/Developer/CommandLineTools/usr/lib; do
+    [ -f "$d/libclang.dylib" ] && echo "$d" && break
+  done
+```
+export LIBCLANG_PATH := libclang_dir
 export DYLD_FALLBACK_LIBRARY_PATH := ffmpeg_prefix / "lib"
 
 # List available recipes
@@ -20,12 +31,15 @@ default:
 # Run the CLI against the committed fixture, the way CI does on Windows.
 # ENCODER defaults to x264 here because macOS Homebrew FFmpeg has no
 # openh264; CI pins openh264, which is what the shipped .exe actually uses.
-smoke ENCODER="x264":
-    @cargo build -p cli --features system --release 2>/dev/null
+smoke ENCODER="x264" OUT="/tmp/squeeze-smoke":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "{{OUT}}"
+    cargo build -p cli --features system --release >/dev/null
     ./target/release/squeeze-cli --max-mb 0.15 --encoder {{ENCODER}} \
-        --suffix _sw -o /tmp tests/data/smoke.mp4
-    ./target/release/squeeze-cli --max-mb 5 --suffix _rt -o /tmp /tmp/smoke_sw.mp4
-    @echo "smoke test passed"
+        --suffix _sw -o "{{OUT}}" tests/data/smoke.mp4
+    ./target/release/squeeze-cli --max-mb 5 --suffix _rt -o "{{OUT}}" "{{OUT}}/smoke_sw.mp4"
+    echo "smoke test passed (outputs in {{OUT}})"
 
 # Type-check the workspace (macOS, system FFmpeg)
 check:
@@ -54,7 +68,9 @@ shot *FILES:
     set -euo pipefail
     out="${OUT:-/tmp/squeeze_shot.png}"; delay="${DELAY:-5}"
     cargo build --release -p gui --features system >/dev/null
-    ./target/release/squeeze {{FILES}} >/tmp/squeeze_shot.log 2>&1 &
+    # Log beside the image rather than at a fixed path, so two runs with
+    # different OUT do not overwrite each other's output.
+    ./target/release/squeeze {{FILES}} >"${out%.png}.log" 2>&1 &
     pid=$!
     trap 'kill $pid 2>/dev/null || true' EXIT
     sleep "$delay"
