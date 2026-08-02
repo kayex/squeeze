@@ -359,10 +359,27 @@ impl eframe::App for App {
                 // recipe refuses to tag unless they match, so this label always
                 // names the GitHub release the binary came from.
                 ui.add_space(2.0);
-                ui.label(
-                    egui::RichText::new(env!("CARGO_PKG_VERSION"))
-                        .monospace()
-                        .color(theme::TEXT_DIM),
+                // Painted a shade below the row's centre line, the same trick
+                // the mark uses in the other direction. Centred, the number
+                // floats against the wordmark's cap band; dropping it settles
+                // it onto the same optical line as the name.
+                const VERSION_DROP: f32 = 2.0;
+                let mut job = egui::text::LayoutJob::default();
+                job.append(
+                    env!("CARGO_PKG_VERSION"),
+                    0.0,
+                    egui::TextFormat {
+                        font_id: egui::TextStyle::Monospace.resolve(ui.style()),
+                        color: theme::TEXT_DIM,
+                        ..Default::default()
+                    },
+                );
+                let galley = ui.painter().layout_job(job);
+                let (rect, _) = ui.allocate_exact_size(galley.size(), egui::Sense::hover());
+                ui.painter().galley(
+                    rect.min + egui::vec2(0.0, VERSION_DROP),
+                    galley,
+                    theme::TEXT_DIM,
                 );
 
                 // Plans sit opposite the title. One is always lit, so the group
