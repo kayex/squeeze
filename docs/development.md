@@ -53,6 +53,12 @@ The `system` cargo feature (`rsmpeg/link_system_ffmpeg`) links the Homebrew
 FFmpeg via pkg-config. Homebrew ships FFmpeg 8.x, which matches the pinned
 `ffmpeg8` bindings.
 
+## Verifying a build on real hardware
+
+CI builds and smoke-tests the binaries, but has no GPU and the Mac has no
+NVENC. [windows-verification.md](windows-verification.md) is the checklist
+for what only a Windows machine with an NVIDIA card can answer.
+
 ## Building on Windows
 
 CI does this for you (see below), so build locally only if you're changing the
