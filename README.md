@@ -72,11 +72,15 @@ point fewer or smaller frames look better than blurry ones.
    holding the frame leaves too little bitrate to be worth it, the clip's card
    says so. Clips are never enlarged.
 
-4. **Frame rate**: anything above 45 fps drops to 30 when the bitrate is
-   under ~3 Mbit/s, which is the usual case for clips longer than about
-   20 seconds at 10 MB. The **Keep fps** switch (or `--keep-fps`) overrides
-   this. Variable frame rate, which ShadowPlay records, is converted to
-   constant.
+4. **Frame rate**: halved when the bitrate will not carry it, and halved again
+   if it still will not, so 120 fps goes to 60 and then 30, and 144 goes to 72.
+   Halving keeps every other frame and so stays evenly spaced; snapping 144
+   straight to 60 would keep five frames out of twelve and judder. About
+   50 kbit/s per frame per second is the guide, which puts 60 fps at roughly
+   3 Mbit/s: the usual case for clips longer than about 20 seconds at 10 MB.
+   Nothing goes below 24 fps. The **Keep fps** switch (or `--keep-fps`)
+   overrides all of it. Variable frame rate, which ShadowPlay records, is
+   converted to constant.
 
 5. **Audio**: the original track is copied across untouched while it stays a
    modest part of the budget. On a long clip it stops being modest, since a

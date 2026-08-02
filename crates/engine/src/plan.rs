@@ -20,6 +20,13 @@ const AUDIO_MAX_SHARE: f64 = 0.30;
 /// Re-encoding stereo AAC below this stops being worth keeping.
 const AUDIO_MIN_BPS: i64 = 48_000;
 
+/// Roughly what one frame per second is worth spending. Calibrated so 60 fps
+/// wants 3 Mbit/s, which is where the single 60-to-30 rule used to sit.
+const BPS_PER_FPS: f64 = 50_000.0;
+/// Never halve past this. Below it motion starts to read as a slideshow, and
+/// the bits saved are better found in the resolution ladder.
+const MIN_FPS: f64 = 24.0;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AudioAction {
     /// Stream-copy the source audio (no re-encode, no generation loss).
@@ -209,15 +216,35 @@ pub(crate) fn ladder_resolution(info: &MediaInfo, video_bps: i64) -> (i32, i32) 
     )
 }
 
-/// Always normalize to CFR. Anything above 45 fps goes to a flat 30 when bits
-/// are tight, whatever it started at: 120 and 144 fps captures land on 30 too,
-/// not on 60 or 72. Otherwise the source nominal rate is kept.
+/// Always normalize to CFR, and step the rate down only as far as the bitrate
+/// warrants.
+///
+/// Reduction is always a **halving**, never a jump to some standard rate. Half
+/// of a rate keeps every other frame, so the result is evenly spaced: 120 goes
+/// to 60 and then to 30, and 144 goes to 72. Snapping 144 straight to 60 would
+/// mean keeping five frames out of every twelve, which judders however good the
+/// encode is. Halving is exact on rationals too, so 60000/1001 becomes
+/// 30000/1001 rather than a rounded, slightly wrong 30.
 fn choose_fps(info: &MediaInfo, opts: &CompressOptions, video_bps: i64) -> (i32, i32) {
-    let src_fps = info.fps();
-    if !opts.keep_fps && src_fps > 45.0 && video_bps < 3_000_000 {
-        return (30, 1);
+    let num = info.fps_num;
+    let mut den = info.fps_den.max(1);
+    if opts.keep_fps {
+        return (num, den);
     }
-    (info.fps_num, info.fps_den.max(1))
+    loop {
+        let fps = num as f64 / den as f64;
+        // Affordable at this rate: stop here.
+        if video_bps as f64 >= fps * BPS_PER_FPS {
+            break;
+        }
+        // Checked before committing, so a 40 fps source is left alone rather
+        // than dropped to 20 the moment the budget gets tight.
+        if fps / 2.0 < MIN_FPS {
+            break;
+        }
+        den *= 2;
+    }
+    (num, den)
 }
 
 fn make_even(x: i32) -> i32 {
