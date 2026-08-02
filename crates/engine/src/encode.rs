@@ -352,7 +352,16 @@ fn encoder_options(kind: EncoderKind) -> Option<AVDictionary> {
         EncoderKind::X264 => {
             Some(AVDictionary::new(c"preset", c"medium", 0).set(c"profile", c"high", 0))
         }
-        EncoderKind::OpenH264 => None,
+        // openh264 defaults to a quality-targeted mode that ignores the
+        // bitrate entirely, and says so: "bitrate can't be controlled ...
+        // without enabling skip frame". Left at the default it overshoots the
+        // ceiling on every pass and the size loop cannot converge, which is
+        // exactly what a size-targeted encoder must not do. Asking for the
+        // bitrate mode and letting it drop frames when it must is the trade
+        // this tool wants: a skipped frame beats a file too big to send.
+        EncoderKind::OpenH264 => Some(
+            AVDictionary::new(c"rc_mode", c"bitrate", 0).set(c"allow_skip_frames", c"1", 0),
+        ),
     }
 }
 
