@@ -1,17 +1,18 @@
 //! One transcode pass: decode -> (scale + CFR + yuv420p) filter -> H.264
-//! encoder (NVENC by default) -> MP4 mux with faststart. Audio is stream-copied.
+//! encoder (NVENC by default) -> MP4 mux with faststart. Audio is copied when
+//! that is affordable and re-encoded to AAC when it is not.
 //!
 //! Structure follows rsmpeg's own `tests/ffmpeg_examples/transcode.rs`, adapted
-//! to a single video stream (transcoded) plus an optional audio stream (copied).
+//! to a single video stream plus an optional audio stream.
 
-use crate::plan::EncodePlan;
+use crate::plan::{AudioAction, EncodePlan};
 use crate::probe::MediaInfo;
 use anyhow::{anyhow, bail, Context, Result};
 use rsmpeg::{
-    avcodec::{AVCodec, AVCodecContext},
+    avcodec::{AVCodec, AVCodecContext, AVCodecParameters},
     avfilter::{AVFilter, AVFilterContextMut, AVFilterGraph, AVFilterInOut},
     avformat::{AVFormatContextInput, AVFormatContextOutput},
-    avutil::{av_rescale_q, ra, AVDictionary, AVFrame},
+    avutil::{av_rescale_q, ra, AVChannelLayout, AVDictionary, AVFrame},
     error::RsmpegError,
     ffi,
 };
@@ -89,7 +90,7 @@ pub fn transcode(
     info: &MediaInfo,
     encoder_name: &CStr,
     encoder_kind: EncoderKind,
-    copy_audio: bool,
+    audio_action: AudioAction,
     on_progress: &mut dyn FnMut(f32),
 ) -> Result<()> {
     // ---- input + video decoder ----
@@ -201,15 +202,30 @@ pub fn transcode(
         video_out = stream.index as usize;
     }
 
-    // Optional audio output stream (stream-copied).
-    let audio_out = if copy_audio {
-        audio_par.as_ref().map(|par| {
+    // Optional audio output stream: either the source parameters copied across
+    // verbatim, or an AAC encoder the source is fed through.
+    let mut audio_enc: Option<AudioEncode> = None;
+    let audio_out = match audio_action {
+        AudioAction::Drop => None,
+        AudioAction::Copy => audio_par.as_ref().map(|par| {
             let mut stream = ofmt.new_stream();
             stream.set_codecpar(par.clone());
             stream.index as usize
-        })
-    } else {
-        None
+        }),
+        AudioAction::Reencode { bps } => match (audio_in, audio_par.as_ref()) {
+            (Some(idx), Some(par)) => {
+                let stream_tb = ifmt.streams()[idx].time_base;
+                let mut a = AudioEncode::new(par, stream_tb, bps)?;
+                let mut stream = ofmt.new_stream();
+                stream.set_codecpar(a.enc_ctx.extract_codecpar());
+                stream.set_time_base(a.enc_ctx.time_base);
+                a.out_index = stream.index as usize;
+                let out = a.out_index;
+                audio_enc = Some(a);
+                Some(out)
+            }
+            _ => None,
+        },
     };
 
     // ---- video filter graph: scale + CFR + yuv420p ----
@@ -256,7 +272,11 @@ pub fn transcode(
                 )?;
             }
         } else if Some(idx) == audio_in {
-            if let (Some(out), Some(in_tb), Some(out_tb)) = (audio_out, audio_in_tb, audio_out_tb) {
+            if let Some(a) = audio_enc.as_mut() {
+                a.push_packet(Some(&packet), &mut ofmt)?;
+            } else if let (Some(out), Some(in_tb), Some(out_tb)) =
+                (audio_out, audio_in_tb, audio_out_tb)
+            {
                 packet.rescale_ts(in_tb, out_tb);
                 packet.set_stream_index(out as i32);
                 packet.set_pos(-1);
@@ -294,6 +314,9 @@ pub fn transcode(
         video_out,
     )?;
     flush_encoder(&mut enc_ctx, &mut ofmt, video_out)?;
+    if let Some(a) = audio_enc.as_mut() {
+        a.finish(&mut ofmt)?;
+    }
 
     ofmt.write_trailer().context("write trailer")?;
     Ok(())
@@ -329,6 +352,284 @@ fn video_filter_spec(plan: &EncodePlan) -> CString {
         fd = plan.fps_den.max(1),
     );
     CString::new(spec).expect("filter spec has no interior NUL")
+}
+
+/// Copy the streams into an MP4 without touching the pixels.
+///
+/// Used when the source already fits the ceiling: re-encoding it would spend a
+/// generation of quality and, because the target bitrate is clamped to the
+/// source's own, come out about the same size regardless. Also upgrades an MKV
+/// wrapper to MP4 and adds faststart on the way past.
+pub fn remux(input: &CStr, output: &CStr, include_audio: bool) -> Result<()> {
+    let mut ifmt = AVFormatContextInput::open(input).context("open input")?;
+    let mut ofmt = AVFormatContextOutput::create(output).context("create output")?;
+
+    let n = ifmt.streams().len();
+    let mut map: Vec<Option<usize>> = Vec::with_capacity(n);
+    let mut in_tb: Vec<ffi::AVRational> = Vec::with_capacity(n);
+    let (mut have_video, mut have_audio) = (false, false);
+    for i in 0..n {
+        let (par, tb, kind) = {
+            let stream = &ifmt.streams()[i];
+            (
+                stream.codecpar().clone(),
+                stream.time_base,
+                stream.codecpar().codec_type(),
+            )
+        };
+        in_tb.push(tb);
+        let take = if kind.is_video() && !have_video {
+            have_video = true;
+            true
+        } else if kind.is_audio() && include_audio && !have_audio {
+            have_audio = true;
+            true
+        } else {
+            false
+        };
+        map.push(if take {
+            let mut out = ofmt.new_stream();
+            out.set_codecpar(par);
+            out.set_time_base(tb);
+            // The source tag belongs to the source container and can be
+            // meaningless in MP4; zero lets the muxer choose the right one.
+            unsafe {
+                (*(*out.as_mut_ptr()).codecpar).codec_tag = 0;
+            }
+            Some(out.index as usize)
+        } else {
+            None
+        });
+    }
+    if !have_video {
+        bail!("input has no video stream");
+    }
+
+    let mut header_opts = Some(AVDictionary::new(c"movflags", c"+faststart", 0));
+    ofmt.write_header(&mut header_opts)
+        .context("write header")?;
+    let out_tb: Vec<ffi::AVRational> = ofmt.streams().iter().map(|s| s.time_base).collect();
+
+    while let Some(mut pkt) = ifmt.read_packet().context("read packet")? {
+        let i = pkt.stream_index as usize;
+        if let Some(o) = map.get(i).copied().flatten() {
+            pkt.rescale_ts(in_tb[i], out_tb[o]);
+            pkt.set_stream_index(o as i32);
+            pkt.set_pos(-1);
+            ofmt.interleaved_write_frame(&mut pkt)
+                .context("write packet")?;
+        }
+    }
+    ofmt.write_trailer().context("write trailer")?;
+    Ok(())
+}
+
+/// The audio re-encode path: source track -> decoder -> sample-format and rate
+/// conversion -> AAC at a chosen bitrate.
+///
+/// Conversion runs through a filter graph rather than a resampler plus a
+/// hand-written sample buffer, because AAC will only accept frames of exactly
+/// `frame_size` samples and `buffersink_set_frame_size` already chunks them
+/// that way. The graph is stored and its two endpoints looked up by name on
+/// each call: holding the endpoint handles next to the graph they borrow from
+/// would make this struct self-referential.
+struct AudioEncode {
+    dec_ctx: AVCodecContext,
+    enc_ctx: AVCodecContext,
+    graph: AVFilterGraph,
+    out_index: usize,
+}
+
+impl AudioEncode {
+    fn new(par: &AVCodecParameters, stream_tb: ffi::AVRational, bps: i64) -> Result<Self> {
+        let decoder = AVCodec::find_decoder(par.codec_id).context("no decoder for source audio")?;
+        let mut dec_ctx = AVCodecContext::new(&decoder);
+        dec_ctx
+            .apply_codecpar(par)
+            .context("apply audio codecpar")?;
+        dec_ctx.set_pkt_timebase(stream_tb);
+        dec_ctx.open(None).context("open audio decoder")?;
+
+        let encoder = AVCodec::find_encoder_by_name(c"aac").context("no AAC encoder in build")?;
+        let mut enc_ctx = AVCodecContext::new(&encoder);
+        let rate = if dec_ctx.sample_rate > 0 {
+            dec_ctx.sample_rate
+        } else {
+            48_000
+        };
+        // Rebuilt from the channel count rather than copied: a source layout may
+        // own a heap allocation that must not be aliased by a second context.
+        let channels = dec_ctx.ch_layout().nb_channels.clamp(1, 8);
+        let layout = AVChannelLayout::from_nb_channels(channels);
+        enc_ctx.set_ch_layout(layout.into_inner());
+        enc_ctx.set_sample_rate(rate);
+        enc_ctx.set_sample_fmt(ffi::AV_SAMPLE_FMT_FLTP);
+        enc_ctx.set_bit_rate(bps);
+        enc_ctx.set_time_base(ra(1, rate));
+        enc_ctx.open(None).context("open AAC encoder")?;
+
+        let mut graph = AVFilterGraph::new();
+        Self::init_filter(&mut graph, &dec_ctx, &enc_ctx, rate, channels)?;
+        Ok(Self {
+            dec_ctx,
+            enc_ctx,
+            graph,
+            out_index: 0,
+        })
+    }
+
+    fn init_filter(
+        graph: &mut AVFilterGraph,
+        dec_ctx: &AVCodecContext,
+        enc_ctx: &AVCodecContext,
+        rate: i32,
+        channels: i32,
+    ) -> Result<()> {
+        let abuffer = AVFilter::get_by_name(c"abuffer").context("abuffer filter missing")?;
+        let abuffersink =
+            AVFilter::get_by_name(c"abuffersink").context("abuffersink filter missing")?;
+        let in_layout = dec_ctx
+            .ch_layout()
+            .describe()
+            .unwrap_or_else(|_| CString::new("stereo").unwrap());
+        let fmt_name = unsafe { ffi::av_get_sample_fmt_name(dec_ctx.sample_fmt) };
+        let fmt_name = if fmt_name.is_null() {
+            CString::new("fltp").unwrap()
+        } else {
+            unsafe { CStr::from_ptr(fmt_name) }.to_owned()
+        };
+        let args = CString::new(format!(
+            "time_base={}/{}:sample_rate={}:sample_fmt={}:channel_layout={}",
+            dec_ctx.pkt_timebase.num.max(1),
+            dec_ctx.pkt_timebase.den.max(1),
+            dec_ctx.sample_rate.max(1),
+            fmt_name.to_string_lossy(),
+            in_layout.to_string_lossy(),
+        ))
+        .unwrap();
+
+        let mut src = graph
+            .create_filter_context(&abuffer, c"ain", Some(&args))
+            .context("create abuffer source")?;
+        let mut sink = graph
+            .alloc_filter_context(&abuffersink, c"aout")
+            .context("alloc abuffer sink")?;
+        sink.init_dict(&mut None).context("init abuffer sink")?;
+
+        let out_layout = AVChannelLayout::from_nb_channels(channels)
+            .describe()
+            .unwrap_or_else(|_| CString::new("stereo").unwrap());
+        // Endpoints are labelled rather than left to positional matching, so
+        // the graph is linked by name and cannot silently come out dangling.
+        let spec = CString::new(format!(
+            "[ain]aformat=sample_fmts=fltp:sample_rates={rate}:channel_layouts={}[aout]",
+            out_layout.to_string_lossy()
+        ))
+        .unwrap();
+        let outputs = AVFilterInOut::new(c"ain", &mut src, 0);
+        let inputs = AVFilterInOut::new(c"aout", &mut sink, 0);
+        graph
+            .parse_ptr(&spec, Some(inputs), Some(outputs))
+            .context("parse audio filter spec")?;
+        graph.config().context("configure audio filter graph")?;
+
+        // AAC takes a fixed number of samples per frame; let the sink do the
+        // chunking rather than buffering partial frames by hand.
+        if enc_ctx.frame_size > 0 {
+            if let Some(mut sink) = graph.get_filter(c"aout") {
+                sink.buffersink_set_frame_size(enc_ctx.frame_size as u32);
+            }
+        }
+        Ok(())
+    }
+
+    /// Decode one source packet (or `None` to flush) and push whatever comes out
+    /// through the graph and into the encoder.
+    fn push_packet(
+        &mut self,
+        packet: Option<&rsmpeg::avcodec::AVPacket>,
+        ofmt: &mut AVFormatContextOutput,
+    ) -> Result<()> {
+        self.dec_ctx
+            .send_packet(packet)
+            .context("audio decode submit")?;
+        loop {
+            let frame = match self.dec_ctx.receive_frame() {
+                Ok(f) => f,
+                Err(RsmpegError::DecoderDrainError) | Err(RsmpegError::DecoderFlushedError) => {
+                    break
+                }
+                Err(e) => bail!(e),
+            };
+            self.filter_and_encode(Some(frame), ofmt)?;
+        }
+        Ok(())
+    }
+
+    fn filter_and_encode(
+        &mut self,
+        frame: Option<AVFrame>,
+        ofmt: &mut AVFormatContextOutput,
+    ) -> Result<()> {
+        {
+            let mut src = self
+                .graph
+                .get_filter(c"ain")
+                .ok_or_else(|| anyhow!("audio filter source vanished"))?;
+            src.buffersrc_add_frame(frame, None)
+                .context("feed audio filter")?;
+        }
+        loop {
+            let filtered = {
+                let mut sink = self
+                    .graph
+                    .get_filter(c"aout")
+                    .ok_or_else(|| anyhow!("audio filter sink vanished"))?;
+                match sink.buffersink_get_frame(None) {
+                    Ok(f) => f,
+                    Err(RsmpegError::BufferSinkDrainError)
+                    | Err(RsmpegError::BufferSinkEofError) => break,
+                    Err(e) => bail!(e),
+                }
+            };
+            self.encode_write(Some(filtered), ofmt)?;
+        }
+        Ok(())
+    }
+
+    fn encode_write(
+        &mut self,
+        frame: Option<AVFrame>,
+        ofmt: &mut AVFormatContextOutput,
+    ) -> Result<()> {
+        self.enc_ctx
+            .send_frame(frame.as_ref())
+            .context("audio encode submit")?;
+        loop {
+            let mut pkt = match self.enc_ctx.receive_packet() {
+                Ok(p) => p,
+                Err(RsmpegError::EncoderDrainError) | Err(RsmpegError::EncoderFlushedError) => {
+                    break
+                }
+                Err(e) => bail!(e),
+            };
+            let out_tb = ofmt.streams()[self.out_index].time_base;
+            pkt.rescale_ts(self.enc_ctx.time_base, out_tb);
+            pkt.set_stream_index(self.out_index as i32);
+            pkt.set_pos(-1);
+            ofmt.interleaved_write_frame(&mut pkt)
+                .context("write audio packet")?;
+        }
+        Ok(())
+    }
+
+    /// Drain decoder, graph and encoder in that order.
+    fn finish(&mut self, ofmt: &mut AVFormatContextOutput) -> Result<()> {
+        self.push_packet(None, ofmt)?;
+        self.filter_and_encode(None, ofmt)?;
+        self.encode_write(None, ofmt)?;
+        Ok(())
+    }
 }
 
 /// Build buffer -> [spec] -> buffersink for the video stream.

@@ -83,6 +83,9 @@ pub struct CompressOutcome {
     pub fits: bool,
     pub info: MediaInfo,
     pub last_plan: EncodePlan,
+    /// True when the file was copied rather than re-encoded, because it already
+    /// fitted the ceiling.
+    pub remuxed: bool,
     /// When the frame was held at the source size and the ladder would have
     /// chosen something smaller, the size it would have chosen. `None` when no
     /// hold was asked for, or when holding cost nothing. A UI can use this to
@@ -104,10 +107,50 @@ pub fn compress_to_target(
     mut on_progress: impl FnMut(&PassInfo),
 ) -> Result<CompressOutcome> {
     let info = probe(input)?;
-    let (encoder_name, encoder_kind) = encode::resolve_encoder(opts.encoder)?;
-
     let input_c = path_to_cstring(input)?;
     let output_c = path_to_cstring(output)?;
+
+    // A clip that already fits needs no encoding at all. Re-encoding it would
+    // cost a generation of quality and, since the target bitrate is clamped to
+    // the source's own, produce a file of roughly the same size. Only H.264
+    // qualifies: anything else has to be converted to keep the promise that the
+    // output is H.264 in MP4.
+    let source_bytes = std::fs::metadata(input).map(|m| m.len()).unwrap_or(0);
+    if info.video_codec == "h264" && source_bytes > 0 && source_bytes <= opts.max_bytes {
+        let keep_audio = opts.include_audio && info.has_audio;
+        encode::remux(&input_c, &output_c, keep_audio).context("remux")?;
+        let final_bytes = std::fs::metadata(output)
+            .with_context(|| format!("stat output {}", output.display()))?
+            .len();
+        // A container swap can change the overhead; if it somehow pushed past
+        // the ceiling, fall through and encode after all.
+        if final_bytes <= opts.max_bytes {
+            let last_plan = EncodePlan {
+                width: info.width,
+                height: info.height,
+                fps_num: info.fps_num,
+                fps_den: info.fps_den.max(1),
+                video_bitrate_bps: info.video_bitrate_bps,
+                audio: if keep_audio {
+                    AudioAction::Copy
+                } else {
+                    AudioAction::Drop
+                },
+            };
+            return Ok(CompressOutcome {
+                output: output.to_path_buf(),
+                final_bytes,
+                passes: 0,
+                fits: true,
+                info,
+                last_plan,
+                held_instead_of: None,
+                remuxed: true,
+            });
+        }
+    }
+
+    let (encoder_name, encoder_kind) = encode::resolve_encoder(opts.encoder)?;
 
     let mut plan = plan::plan_initial(&info, opts);
     let mut passes = 0u32;
@@ -135,7 +178,7 @@ pub fn compress_to_target(
             &info,
             encoder_name,
             encoder_kind,
-            matches!(plan.audio, AudioAction::Copy),
+            plan.audio,
             &mut report,
         )
         .with_context(|| format!("encode pass {passes} failed"))?;
@@ -176,6 +219,7 @@ pub fn compress_to_target(
         info,
         last_plan: plan,
         held_instead_of,
+        remuxed: false,
     })
 }
 

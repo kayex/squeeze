@@ -10,7 +10,7 @@
 mod theme;
 
 use eframe::egui;
-use engine::{compress_to_target, CompressOptions};
+use engine::{compress_to_target, AudioAction, CompressOptions};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
@@ -49,6 +49,8 @@ enum Status {
         encoder: String,
         bitrate_bps: i64,
         out: Shape,
+        /// Set when the audio is being re-encoded rather than copied across.
+        audio_bps: Option<i64>,
     },
     Done {
         bytes: u64,
@@ -59,6 +61,10 @@ enum Status {
         /// Set when Keep resolution held a frame the ladder would have shrunk,
         /// so the card can say what that cost.
         held: Option<(i32, i32)>,
+        /// Set when the audio was re-encoded rather than copied across.
+        audio_bps: Option<i64>,
+        /// True when the clip already fitted and was copied, not re-encoded.
+        remuxed: bool,
     },
     Failed(String),
 }
@@ -171,6 +177,10 @@ impl App {
                                 height: p.plan.height,
                                 fps: p.plan.fps() as f32,
                             },
+                            audio_bps: match p.plan.audio {
+                                AudioAction::Reencode { bps } => Some(bps),
+                                _ => None,
+                            },
                         },
                     });
                     repaint.request_repaint();
@@ -183,6 +193,11 @@ impl App {
                         encoder: used_encoder,
                         bitrate_bps: o.last_plan.video_bitrate_bps,
                         held: o.held_instead_of,
+                        audio_bps: match o.last_plan.audio {
+                            AudioAction::Reencode { bps } => Some(bps),
+                            _ => None,
+                        },
+                        remuxed: o.remuxed,
                         out: Shape {
                             width: o.last_plan.width,
                             height: o.last_plan.height,
@@ -732,13 +747,16 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                         bitrate_bps,
                         pass,
                         max_passes,
+                        audio_bps,
                         ..
                     } => {
-                        let rate = bitrate(*bitrate_bps);
                         let note = if *pass > 1 {
-                            format!("{encoder} · {rate} · pass {pass}/{max_passes}")
+                            format!(
+                                "{base} · pass {pass}/{max_passes}",
+                                base = encode_note(encoder, *bitrate_bps, *audio_bps)
+                            )
                         } else {
-                            format!("{encoder} · {rate}")
+                            encode_note(encoder, *bitrate_bps, *audio_bps)
                         };
                         // The chosen limit stands in until the real size is
                         // known, so it is obvious which setting the job started
@@ -757,6 +775,8 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                         out,
                         encoder,
                         bitrate_bps,
+                        audio_bps,
+                        remuxed,
                         ..
                     } => stat_line(
                         ui,
@@ -765,7 +785,11 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                         // matters is the one the eye lands on.
                         Some((mb(*bytes), if *fits { theme::OK } else { theme::WARN })),
                         job.source,
-                        &format!("{encoder} · {}", bitrate(*bitrate_bps)),
+                        &if *remuxed {
+                            "copied, already under the limit".to_string()
+                        } else {
+                            encode_note(encoder, *bitrate_bps, *audio_bps)
+                        },
                     ),
                     Status::Failed(_) => {}
                 }
@@ -785,8 +809,9 @@ fn job_row(ui: &mut egui::Ui, job: &Job) {
                     ui.label(
                         egui::RichText::new(format!(
                             "Couldn't reach {} even at the lowest quality. \
-                             The clip is too long for that limit; trim it to a \
-                             shorter section and try again.",
+                             The clip is too long for that limit: trim it to a \
+                             shorter section, or turn off audio to give the \
+                             picture the rest of the budget.",
                             budget_label(job.budget)
                         ))
                         .small()
@@ -943,6 +968,16 @@ fn bitrate(bps: i64) -> String {
         format!("{:.1} Mbit/s", bps as f64 / 1_000_000.0)
     } else {
         format!("{} kbit/s", bps / 1000)
+    }
+}
+
+/// Right-hand summary of how a pass was encoded. Audio is only named when it
+/// was re-encoded: saying so on every clip would imply a choice was made when
+/// copying is simply the default.
+fn encode_note(encoder: &str, video_bps: i64, audio_bps: Option<i64>) -> String {
+    match audio_bps {
+        Some(a) => format!("{encoder} · {} · audio {}", bitrate(video_bps), bitrate(a)),
+        None => format!("{encoder} · {}", bitrate(video_bps)),
     }
 }
 

@@ -47,6 +47,10 @@ Nothing here is something you do. It is what Squeeze works out on its own once
 you have picked a size limit. It is described only so the output holds no
 surprises.
 
+A clip that is already under the limit is copied across as it is, with nothing
+re-encoded and nothing lost. The rest of this applies to clips that have to
+shrink.
+
 The limit and the length of the clip decide everything else: a fixed number of
 bytes spread over more seconds means fewer bits per second, and below a certain
 point fewer or smaller frames look better than blurry ones.
@@ -73,11 +77,16 @@ point fewer or smaller frames look better than blurry ones.
    this. Variable frame rate, which ShadowPlay records, is converted to
    constant.
 
-5. **Encoding**: H.264, with the original audio track copied across rather than
-   re-compressed. This runs on the GPU where possible. The **No audio** switch
-   (or `--no-audio`) drops the track and spends its share on video.
+5. **Audio**: the original track is copied across untouched while it stays a
+   modest part of the budget. On a long clip it stops being modest, since a
+   195 kbit/s track runs to 7.3 MB over five minutes, most of a 10 MB limit.
+   Past about a third of the budget it is re-encoded to AAC at a lower rate so
+   the picture keeps room to breathe. The **No audio** switch (or `--no-audio`)
+   drops it entirely and spends its share on video.
 
-6. **Size check**: the finished file is measured, and if it came out over the
+6. **Encoding**: H.264, on the GPU where possible.
+
+7. **Size check**: the finished file is measured, and if it came out over the
    limit it is encoded again at a lower bitrate, up to three attempts.
 
 Squeeze shows the resolution and frame rate settled on for each clip, so a

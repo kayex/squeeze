@@ -8,7 +8,7 @@
 //! via libav* (NVENC by default); no ffmpeg.exe is invoked.
 
 use anyhow::{bail, Context, Result};
-use engine::{compress_to_target, CompressOptions, Encoder};
+use engine::{compress_to_target, AudioAction, CompressOptions, Encoder};
 use std::path::{Path, PathBuf};
 
 struct Args {
@@ -79,18 +79,22 @@ fn process_one(input: &Path, args: &Args, opts: &CompressOptions) -> Result<()> 
         if p.pass != announced {
             announced = p.pass;
             println!(
-                "    pass {}/{}: {}x{} @ {:.3} fps, video {} kbps [{}]",
+                "    pass {}/{}: {}x{} @ {:.3} fps, video {} kbps, audio {} [{}]",
                 p.pass,
                 p.max_passes,
                 p.plan.width,
                 p.plan.height,
                 p.plan.fps(),
                 p.plan.video_bitrate_bps / 1000,
+                audio_label(p.plan.audio),
                 p.encoder,
             );
         }
     })?;
 
+    if outcome.remuxed {
+        println!("    already under the limit: streams copied, nothing re-encoded");
+    }
     let pct = 100.0 * outcome.final_bytes as f64 / source_bytes.max(1) as f64;
     let verdict = if outcome.fits {
         "✓ fits"
@@ -111,6 +115,14 @@ would give a sharper {w}x{h}",
         );
     }
     Ok(())
+}
+
+fn audio_label(a: AudioAction) -> String {
+    match a {
+        AudioAction::Copy => "copied".to_string(),
+        AudioAction::Reencode { bps } => format!("{} kbps AAC", bps / 1000),
+        AudioAction::Drop => "dropped".to_string(),
+    }
 }
 
 fn output_path(input: &Path, suffix: &str, outdir: Option<&Path>) -> PathBuf {
@@ -208,7 +220,7 @@ OPTIONS:\n\
     -o, --outdir <DIR>   Output directory (default: alongside each input)\n\
     --keep-fps           Don't drop >45fps to 30fps when bits are tight\n\
     --keep-resolution    Don't scale the frame down when bits are tight\n\
-    --no-audio           Drop audio instead of stream-copying it\n\
+    --no-audio           Drop the audio track instead of keeping it\n\
     -h, --help           Show this help\n\
 \n\
 Each <INPUT> is written to <stem><suffix>.mp4 (H.264 High, AAC copy, faststart)."

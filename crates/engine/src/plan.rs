@@ -11,10 +11,21 @@ use crate::CompressOptions;
 /// is pointless (better to drop resolution, which `choose_resolution` does).
 const MIN_VIDEO_BPS: i64 = 120_000;
 
+/// Copying the source audio is free of loss, and on a short clip it costs
+/// little: a 195 kbit/s track over 18 seconds is 0.45 MB. Over five minutes the
+/// same track is 7.3 MB, which is most of a 10 MB ceiling, and the video is
+/// left at its floor or the file misses the ceiling outright. Past this share
+/// of the budget the track is re-encoded down to fit the share instead.
+const AUDIO_MAX_SHARE: f64 = 0.30;
+/// Re-encoding stereo AAC below this stops being worth keeping.
+const AUDIO_MIN_BPS: i64 = 48_000;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AudioAction {
     /// Stream-copy the source audio (no re-encode, no generation loss).
     Copy,
+    /// Re-encode to AAC at this bitrate, because copying would eat the budget.
+    Reencode { bps: i64 },
     /// Drop audio entirely.
     Drop,
 }
@@ -40,11 +51,7 @@ impl EncodePlan {
 /// First-pass plan: aim for `margin * max_bytes` so we usually land under the
 /// ceiling without a correction pass.
 pub fn plan_initial(info: &MediaInfo, opts: &CompressOptions) -> EncodePlan {
-    let audio = if opts.include_audio && info.has_audio {
-        AudioAction::Copy
-    } else {
-        AudioAction::Drop
-    };
+    let audio = choose_audio(info, opts);
 
     let video_bps = target_video_bps(info, opts, audio);
     let (fps_num, fps_den) = choose_fps(info, opts, video_bps);
@@ -92,9 +99,33 @@ impl EncodePlan {
     }
 }
 
+/// Keep the source track when it is a modest part of the budget, shrink it when
+/// it is not. Never re-encodes upward: that would add loss and save nothing.
+fn choose_audio(info: &MediaInfo, opts: &CompressOptions) -> AudioAction {
+    if !opts.include_audio || !info.has_audio {
+        return AudioAction::Drop;
+    }
+    let source_bps = assumed_audio_bps(info);
+    let budget_bytes = opts.max_bytes as f64 * opts.margin;
+    let copied_bytes = source_bps as f64 * info.duration_s / 8.0;
+    if copied_bytes <= budget_bytes * AUDIO_MAX_SHARE {
+        return AudioAction::Copy;
+    }
+    let share_bps = (budget_bytes * AUDIO_MAX_SHARE * 8.0 / info.duration_s) as i64;
+    // max() before min() on purpose: a source already quieter than the floor
+    // lands back on its own rate and is copied rather than needlessly re-encoded.
+    let bps = share_bps.max(AUDIO_MIN_BPS).min(source_bps);
+    if bps >= source_bps {
+        AudioAction::Copy
+    } else {
+        AudioAction::Reencode { bps }
+    }
+}
+
 fn audio_bytes(info: &MediaInfo, audio: AudioAction) -> f64 {
     match audio {
         AudioAction::Copy => assumed_audio_bps(info) as f64 * info.duration_s / 8.0,
+        AudioAction::Reencode { bps } => bps as f64 * info.duration_s / 8.0,
         AudioAction::Drop => 0.0,
     }
 }
