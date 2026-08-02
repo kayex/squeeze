@@ -43,21 +43,33 @@ fn run() -> Result<()> {
         ..Default::default()
     };
 
-    let mut failures = 0;
+    let (mut failed, mut over) = (0, 0);
     for input in &args.inputs {
-        if let Err(e) = process_one(input, &args, &opts) {
-            eprintln!("  failed: {e:#}");
-            failures += 1;
+        match process_one(input, &args, &opts) {
+            Err(e) => {
+                eprintln!("  failed: {e:#}");
+                failed += 1;
+            }
+            Ok(false) => over += 1,
+            Ok(true) => {}
         }
     }
 
-    if failures > 0 {
-        bail!("{failures} of {} file(s) failed", args.inputs.len());
+    // Coming out over the ceiling is a failure of the one job this tool has,
+    // even though a file did get written. A script that pipes the result
+    // straight at an upload has no other way to hear about it.
+    let n = args.inputs.len();
+    match (failed, over) {
+        (0, 0) => Ok(()),
+        (0, o) => bail!("{o} of {n} file(s) came out over the limit"),
+        (f, 0) => bail!("{f} of {n} file(s) failed"),
+        (f, o) => bail!("{f} of {n} file(s) failed, {o} came out over the limit"),
     }
-    Ok(())
 }
 
-fn process_one(input: &Path, args: &Args, opts: &CompressOptions) -> Result<()> {
+/// Returns whether the finished file is within the ceiling. `Err` is reserved
+/// for a clip that could not be processed at all.
+fn process_one(input: &Path, args: &Args, opts: &CompressOptions) -> Result<bool> {
     let output = output_path(input, &args.suffix, args.outdir.as_deref());
     if output == input {
         bail!(
@@ -114,7 +126,7 @@ would give a sharper {w}x{h}",
             outcome.last_plan.width, outcome.last_plan.height,
         );
     }
-    Ok(())
+    Ok(outcome.fits)
 }
 
 fn audio_label(a: AudioAction) -> String {
@@ -223,6 +235,7 @@ OPTIONS:\n\
     --no-audio           Drop the audio track instead of keeping it\n\
     -h, --help           Show this help\n\
 \n\
-Each <INPUT> is written to <stem><suffix>.mp4 (H.264 High, AAC copy, faststart)."
+Each <INPUT> is written to <stem><suffix>.mp4 (H.264 High, AAC copy, faststart).\n\
+Exits non-zero if any input failed or could not be brought under the limit."
     );
 }
