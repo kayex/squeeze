@@ -29,7 +29,8 @@ isn't code-signed. If you'd rather check the file first, see
 
 - Windows 10 or 11, 64-bit
 - An NVIDIA GPU with driver 570 or newer, for hardware encoding. Without one,
-  Squeeze encodes in software instead, which is slower but gives the same result.
+  Squeeze falls back to encoding on the CPU, which is slower and, for the same
+  file size, not quite as sharp. The result still fits the limit either way.
 
 ## Usage
 
