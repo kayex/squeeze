@@ -355,6 +355,15 @@ impl eframe::App for App {
                     ui.add_space(2.0);
                 }
                 ui.heading("Squeeze");
+                // The crate version doubles as the release version: the release
+                // recipe refuses to tag unless they match, so this label always
+                // names the GitHub release the binary came from.
+                ui.add_space(2.0);
+                ui.label(
+                    egui::RichText::new(env!("CARGO_PKG_VERSION"))
+                        .monospace()
+                        .color(theme::TEXT_DIM),
+                );
 
                 // Plans sit opposite the title. One is always lit, so the group
                 // reads as a choice without needing a label or button chrome.
